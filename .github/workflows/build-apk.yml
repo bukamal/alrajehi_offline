@@ -3,8 +3,6 @@ name: Build APK
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -33,32 +31,30 @@ jobs:
         run: |
           npm install @capacitor/core @capacitor/android @capacitor/cli
 
-      - name: Create Capacitor config
+      - name: Create Capacitor config (JSON)
         run: |
-          cat > capacitor.config.ts << 'EOF'
-          import { CapacitorConfig } from '@capacitor/cli';
-          const config: CapacitorConfig = {
-            appId: 'com.alrajhi.accounting',
-            appName: 'الراجحي للمحاسبة',
-            webDir: './',
-            server: {
-              androidScheme: 'https',
-              cleartext: true
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.alrajhi.accounting",
+            "appName": "الراجحي للمحاسبة",
+            "webDir": ".",
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true
             },
-            android: {
-              allowMixedContent: true,
-              webContentsDebuggingEnabled: false
+            "android": {
+              "allowMixedContent": true,
+              "webContentsDebuggingEnabled": false
             },
-            plugins: {
-              SplashScreen: {
-                launchShowDuration: 2000,
-                backgroundColor: '#4f46e5',
-                androidSplashResourceName: 'splash',
-                androidScaleType: 'CENTER_CROP',
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "backgroundColor": "#4f46e5",
+                "androidSplashResourceName": "splash",
+                "androidScaleType": "CENTER_CROP"
               }
             }
-          };
-          export default config;
+          }
           EOF
 
       - name: Add Android platform
