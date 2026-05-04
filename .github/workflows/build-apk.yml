@@ -1,76 +1,90 @@
-name: Build Android APK
+name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Setup Java
+      - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-34 build-tools;34.0.0'
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
-
-      - name: Generate keystore
+      - name: Install Capacitor dependencies
         run: |
-          keytool -genkey -v -keystore android.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
-          -storepass android -keypass android \
-          -dname "CN=Alrajhi, OU=Dev, O=Alrajhi, L=Damascus, S=Syria, C=SY"
+          npm install @capacitor/core @capacitor/android @capacitor/cli
 
-      - name: Create TWA manifest
+      - name: Create Capacitor config
         run: |
-          cat > twa-manifest.json << 'MANIFEST'
-          {
-            "packageId": "com.alrajhi.accounting",
-            "host": "bukamal.github.io",
-            "name": "الراجحي للمحاسبة",
-            "launcherName": "الراجحي",
-            "display": "standalone",
-            "themeColor": "#4f46e5",
-            "navigationColor": "#0f172a",
-            "backgroundColor": "#f1f5f9",
-            "startUrl": "/alrajehi_offline/",
-            "iconUrl": "https://bukamal.github.io/alrajehi_offline/icons/icon-512.png",
-            "maskableIconUrl": "https://bukamal.github.io/alrajehi_offline/icons/icon-512.png",
-            "splashScreenFadeOutDuration": 300,
-            "signingKey": {
-              "path": "../android.keystore",
-              "alias": "upload"
+          cat > capacitor.config.ts << 'EOF'
+          import { CapacitorConfig } from '@capacitor/cli';
+          const config: CapacitorConfig = {
+            appId: 'com.alrajhi.accounting',
+            appName: 'الراجحي للمحاسبة',
+            webDir: './',
+            server: {
+              androidScheme: 'https',
+              cleartext: true
+            },
+            android: {
+              allowMixedContent: true,
+              webContentsDebuggingEnabled: false
+            },
+            plugins: {
+              SplashScreen: {
+                launchShowDuration: 2000,
+                backgroundColor: '#4f46e5',
+                androidSplashResourceName: 'splash',
+                androidScaleType: 'CENTER_CROP',
+              }
             }
-          }
-          MANIFEST
+          };
+          export default config;
+          EOF
 
-      - name: Initialize Bubblewrap project
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Debug APK
         run: |
-          mkdir twa-project
-          cd twa-project
-          bubblewrap init --manifest ../twa-manifest.json
+          cd android
+          ./gradlew assembleDebug
 
-      - name: Build APK
-        working-directory: twa-project
-        run: bubblewrap build
-
-      - name: Upload APK artifact
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: alrajhi-app
-          path: twa-project/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: alrajhi-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Build Release APK (unsigned)
+        run: |
+          cd android
+          ./gradlew assembleRelease
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alrajhi-release-unsigned
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
