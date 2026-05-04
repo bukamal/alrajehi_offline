@@ -29,19 +29,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
+      - name: Prepare PWA web dir (avoid copy recursion)
+        run: |
+          mkdir -p www
+          cp index.html style.css manifest.json service-worker.js www/
+          cp -r js icons www/ 2>/dev/null || true
+
       - name: Install Capacitor
         run: |
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
 
-      - name: Clean old config & create capacitor.config.json with absolute webDir
+      - name: Create Capacitor config (webDir = www)
         run: |
-          rm -f capacitor.config.ts capacitor.config.js
-          cat > capacitor.config.json << EOF
+          cat > capacitor.config.json << 'EOF'
           {
             "appId": "com.alrajhi.accounting",
             "appName": "الراجحي للمحاسبة",
-            "webDir": "$GITHUB_WORKSPACE",
+            "webDir": "www",
             "server": {
               "androidScheme": "https",
               "cleartext": true
