@@ -8,6 +8,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # ⬅️ يجبر استخدام Node.js 24 ويزيل التحذير
     
     steps:
       - name: Checkout repository
@@ -16,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'          # أحدث إصدار LTS ثابت
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
@@ -27,38 +29,35 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Capacitor + TypeScript
+      - name: Install Capacitor
         run: |
-          npm install @capacitor/core @capacitor/android @capacitor/cli
-          npm install -D typescript
+          npm install @capacitor/core @capacitor/android
+          npm install -D @capacitor/cli
 
-      - name: Create Capacitor config (JS)
+      - name: Create Capacitor config (JSON – لا تحتاج TypeScript)
         run: |
-          cat > capacitor.config.js << 'EOF'
-          /** @type {import('@capacitor/cli').CapacitorConfig} */
-          const config = {
-            appId: 'com.alrajhi.accounting',
-            appName: 'الراجحي للمحاسبة',
-            webDir: '.',
-            server: {
-              androidScheme: 'https',
-              cleartext: true
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.alrajhi.accounting",
+            "appName": "الراجحي للمحاسبة",
+            "webDir": ".",
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true
             },
-            android: {
-              allowMixedContent: true,
-              webContentsDebuggingEnabled: false
+            "android": {
+              "allowMixedContent": true,
+              "webContentsDebuggingEnabled": false
             },
-            plugins: {
-              SplashScreen: {
-                launchShowDuration: 2000,
-                backgroundColor: '#4f46e5',
-                androidSplashResourceName: 'splash',
-                androidScaleType: 'CENTER_CROP'
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "backgroundColor": "#4f46e5",
+                "androidSplashResourceName": "splash",
+                "androidScaleType": "CENTER_CROP"
               }
             }
-          };
-
-          module.exports = config;
+          }
           EOF
 
       - name: Add Android platform
