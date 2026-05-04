@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>الراجحي للمحاسبة</title>
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+  <link rel="manifest" href="/alrajehi_offline/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/alrajehi_offline/icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/alrajehi_offline/icons/icon-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
@@ -113,11 +113,14 @@
     </div>
   </div>
 
+  <!-- Hidden print iframe -->
+  <iframe id="print-iframe" style="display:none;"></iframe>
+
   <script type="module" src="js/app-offline.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js');
+        navigator.serviceWorker.register('/alrajehi_offline/service-worker.js');
       });
     }
   </script>
