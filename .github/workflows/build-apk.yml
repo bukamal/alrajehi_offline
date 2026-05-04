@@ -8,31 +8,33 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # ⬅️ يضمن استخدام Node.js 24
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5                # v5/v6 تدعم Node.js 24
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5              # v5 تدعم Node.js 24
         with:
           node-version: '22'
 
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
+      - name: Setup Java JDK 21                  # ⬅️ تغيير إلى 21 (مطلوب لـ Capacitor)
+        uses: actions/setup-java@v5              # v5 تدعم Node.js 24
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@v4   # v4 تدعم Node.js 24
 
       - name: Install Capacitor
         run: |
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
 
-      - name: Create Capacitor config
+      - name: Create Capacitor config (JSON)
         run: |
           cat > capacitor.config.json << 'EOF'
           {
@@ -70,7 +72,7 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Upload Debug APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6        # v6 تدعم Node.js 24
         with:
           name: alrajhi-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -81,7 +83,7 @@ jobs:
           ./gradlew assembleRelease
 
       - name: Upload Release APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: alrajhi-release-unsigned
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
