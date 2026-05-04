@@ -1,0 +1,76 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
+
+      - name: Generate keystore
+        run: |
+          keytool -genkey -v -keystore android.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+          -storepass android -keypass android \
+          -dname "CN=Alrajhi, OU=Dev, O=Alrajhi, L=Damascus, S=Syria, C=SY"
+
+      - name: Create TWA manifest
+        run: |
+          cat > twa-manifest.json << 'MANIFEST'
+          {
+            "packageId": "com.alrajhi.accounting",
+            "host": "bukamal.github.io",
+            "name": "الراجحي للمحاسبة",
+            "launcherName": "الراجحي",
+            "display": "standalone",
+            "themeColor": "#4f46e5",
+            "navigationColor": "#0f172a",
+            "backgroundColor": "#f1f5f9",
+            "startUrl": "/alrajehi_offline/",
+            "iconUrl": "https://bukamal.github.io/alrajehi_offline/icons/icon-512.png",
+            "maskableIconUrl": "https://bukamal.github.io/alrajehi_offline/icons/icon-512.png",
+            "splashScreenFadeOutDuration": 300,
+            "signingKey": {
+              "path": "../android.keystore",
+              "alias": "upload"
+            }
+          }
+          MANIFEST
+
+      - name: Initialize Bubblewrap project
+        run: |
+          mkdir twa-project
+          cd twa-project
+          bubblewrap init --manifest ../twa-manifest.json
+
+      - name: Build APK
+        working-directory: twa-project
+        run: bubblewrap build
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alrajhi-app
+          path: twa-project/app/build/outputs/apk/release/app-release-unsigned.apk

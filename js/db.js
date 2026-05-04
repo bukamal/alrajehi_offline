@@ -1,79 +1,46 @@
-// ========== قاعدة البيانات المحلية - Dexie.js ==========
-import Dexie from 'https://cdn.jsdelivr.net/npm/dexie@4.0.10/dist/dexie.mjs';
+import Dexie from 'https://unpkg.com/dexie@3.2.4/dist/dexie.min.mjs';
 
-export const localDB = new Dexie('AlRajhiAccounting');
-
-localDB.version(1).stores({
-    users: 'id, first_name, username, updated_at',
-    accounts: '++id, user_id, name, type, balance, sync_status, updated_at',
-    categories: '++id, user_id, name, sync_status, updated_at',
-    units: '++id, user_id, name, abbreviation, sync_status, updated_at',
-    items: '++id, user_id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id, sync_status, updated_at',
-    item_units: '++id, item_id, unit_id, conversion_factor, sync_status',
-    customers: '++id, user_id, name, phone, address, balance, sync_status, updated_at',
-    suppliers: '++id, user_id, name, phone, address, balance, sync_status, updated_at',
-    invoices: '++id, user_id, type, customer_id, supplier_id, date, reference, total, status, paid, balance, sync_status, updated_at',
-    invoice_lines: '++id, invoice_id, item_id, description, quantity, unit_price, total, unit_id, quantity_in_base, sync_status',
-    payments: '++id, user_id, invoice_id, customer_id, supplier_id, amount, payment_date, notes, sync_status, updated_at',
-    expenses: '++id, user_id, amount, expense_date, description, sync_status, updated_at',
-    sync_queue: '++id, table_name, record_id, action, timestamp, payload, retry_count',
-    settings: 'key, value'
+const db = new Dexie('AlrajhiDB');
+db.version(1).stores({
+  items: '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id',
+  customers: '++id, name, phone, address, balance',
+  suppliers: '++id, name, phone, address, balance',
+  categories: '++id, name',
+  units: '++id, name, abbreviation',
+  invoices: '++id, type, customer_id, supplier_id, date, reference, notes, total, status',
+  invoiceLines: '++id, invoice_id, item_id, unit_id, quantity, unit_price, total, description',
+  payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date, notes',
+  expenses: '++id, amount, expense_date, description'
 });
 
-localDB.items.hook('creating', function (primKey, obj) {
-    obj.updated_at = new Date().toISOString();
-    if (!obj.sync_status) obj.sync_status = 'pending';
-});
-
-localDB.items.hook('updating', function (mods, primKey, obj) {
-    mods.updated_at = new Date().toISOString();
-    if (obj.sync_status === 'synced') mods.sync_status = 'pending';
-});
-
-export async function getPendingSyncCount() {
-    return await localDB.sync_queue.count();
-}
-
-export async function getAllPendingSync() {
-    return await localDB.sync_queue.orderBy('timestamp').toArray();
-}
-
-export async function clearSyncQueue() {
-    return await localDB.sync_queue.clear();
-}
-
-export async function getLastSyncTime() {
-    const setting = await localDB.settings.get('last_sync');
-    return setting ? setting.value : null;
-}
-
-export async function setLastSyncTime(time) {
-    return await localDB.settings.put({ key: 'last_sync', value: time });
-}
+export const localDB = {
+  items: db.items,
+  customers: db.customers,
+  suppliers: db.suppliers,
+  categories: db.categories,
+  units: db.units,
+  invoices: db.invoices,
+  invoiceLines: db.invoiceLines,
+  payments: db.payments,
+  expenses: db.expenses
+};
 
 export async function exportAllData() {
-    const data = {};
-    const tables = ['accounts', 'categories', 'units', 'items', 'customers', 
-                    'suppliers', 'invoices', 'payments', 'expenses'];
-    for (const table of tables) {
-        data[table] = await localDB[table].toArray();
+  const tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
+  const data = {};
+  for (const t of tables) {
+    data[t] = await db.table(t).toArray();
+  }
+  return JSON.stringify(data, null, 2);
+}
+
+export async function importAllData(jsonStr) {
+  const data = JSON.parse(jsonStr);
+  const tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
+  for (const t of tables) {
+    await db.table(t).clear();
+    if (data[t]?.length) {
+      await db.table(t).bulkAdd(data[t]);
     }
-    return JSON.stringify(data, null, 2);
+  }
 }
-
-export async function importAllData(jsonData) {
-    const data = JSON.parse(jsonData);
-    await localDB.transaction('rw', 
-        localDB.accounts, localDB.categories, localDB.units, 
-        localDB.items, localDB.customers, localDB.suppliers,
-        localDB.invoices, localDB.payments, localDB.expenses,
-        async () => {
-            for (const [table, records] of Object.entries(data)) {
-                await localDB[table].clear();
-                await localDB[table].bulkAdd(records);
-            }
-        }
-    );
-}
-
-console.log('✅ قاعدة البيانات المحلية جاهزة');

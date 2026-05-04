@@ -1,185 +1,140 @@
-// ========== طبقة API الموحدة - Offline-First ==========
 import { localDB } from './db.js';
-import { syncManager } from './sync.js';
-
-window.APP_CONFIG = {
-    API_BASE: localStorage.getItem('api_base') || '/api',
-    AUTH_MODE: localStorage.getItem('auth_mode') || 'telegram',
-    OFFLINE_FIRST: true
-};
-
-function isOnline() { return navigator.onLine; }
-
-function getAuthHeaders() {
-    const headers = { 'Content-Type': 'application/json' };
-    if (window.APP_CONFIG.AUTH_MODE === 'telegram') {
-        const tg = window.Telegram?.WebApp;
-        if (tg) headers['X-Telegram-Init-Data'] = tg.initData;
-    } else {
-        const token = localStorage.getItem('auth_token');
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-    }
-    return headers;
-}
 
 export async function apiCall(endpoint, method = 'GET', body = {}) {
-    const tableName = endpoint.split('/')[1]?.split('?')[0];
-    if (isOnline() && window.APP_CONFIG.OFFLINE_FIRST) {
-        try {
-            const result = await makeOnlineRequest(endpoint, method, body);
-            if (method === 'GET' && tableName && localDB[tableName]) {
-                await updateLocalCache(tableName, result);
-            }
-            return result;
-        } catch (err) {
-            console.warn('⚠️ فشل الطلب Online، الانتقال لـ Offline:', err.message);
+  const [resource, queryString] = endpoint.split('?');
+  const parts = resource.split('/').filter(Boolean);
+  const tableName = parts[0];
+  const params = new URLSearchParams(queryString || '');
+  const id = parts[1] || params.get('id');
+
+  if (method === 'GET') {
+    switch (tableName) {
+      case 'items': return await localDB.items.toArray();
+      case 'customers': return await localDB.customers.toArray();
+      case 'suppliers': return await localDB.suppliers.toArray();
+      case 'definitions':
+        if (params.get('type') === 'category') return await localDB.categories.toArray();
+        if (params.get('type') === 'unit') return await localDB.units.toArray();
+        break;
+      case 'invoices': {
+        const invs = await localDB.invoices.toArray();
+        for (const inv of invs) {
+          const pmts = await localDB.payments.where({ invoice_id: inv.id }).toArray();
+          inv.paid = pmts.reduce((s, p) => s + (p.amount || 0), 0);
+          inv.balance = (inv.total || 0) - inv.paid;
         }
+        return invs;
+      }
+      case 'payments': return await localDB.payments.toArray();
+      case 'expenses': return await localDB.expenses.toArray();
+      default: return [];
     }
-    return handleOfflineRequest(endpoint, method, body, tableName);
-}
+  }
 
-async function makeOnlineRequest(endpoint, method, body) {
-    const API_BASE = window.APP_CONFIG.API_BASE;
-    let url = API_BASE + endpoint;
-    if (window.APP_CONFIG.AUTH_MODE === 'telegram') {
-        const tg = window.Telegram?.WebApp;
-        if (tg && (method === 'GET' || method === 'DELETE')) {
-            const sep = url.includes('?') ? '&' : '?';
-            url += `${sep}initData=${encodeURIComponent(tg.initData)}`;
+  if (method === 'POST') {
+    const payload = { ...body };
+    delete payload.initData;
+    switch (tableName) {
+      case 'items': {
+        const newId = await localDB.items.add(payload);
+        return { id: newId, ...payload };
+      }
+      case 'customers': {
+        const newId = await localDB.customers.add({ ...payload, balance: payload.balance || 0 });
+        return { id: newId, ...payload };
+      }
+      case 'suppliers': {
+        const newId = await localDB.suppliers.add({ ...payload, balance: 0 });
+        return { id: newId, ...payload };
+      }
+      case 'definitions': {
+        const type = params.get('type') || body.type;
+        if (type === 'category') {
+          const newId = await localDB.categories.add({ name: payload.name });
+          return { id: newId, name: payload.name };
         }
-    }
-    const options = { method, headers: getAuthHeaders() };
-    if (method !== 'GET' && method !== 'DELETE') {
-        if (window.APP_CONFIG.AUTH_MODE === 'telegram') {
-            const tg = window.Telegram?.WebApp;
-            if (tg) body.initData = tg.initData;
+        if (type === 'unit') {
+          const newId = await localDB.units.add({ name: payload.name, abbreviation: payload.abbreviation });
+          return { id: newId, name: payload.name, abbreviation: payload.abbreviation };
         }
-        options.body = JSON.stringify(body);
-    }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    options.signal = controller.signal;
-    try {
-        const res = await fetch(url, options);
-        clearTimeout(timeout);
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || `خطأ ${res.status}`);
-        return json;
-    } catch (err) {
-        clearTimeout(timeout);
-        throw err;
-    }
-}
-
-async function handleOfflineRequest(endpoint, method, body, tableName) {
-    console.log(`📴 Offline Mode: ${method} ${endpoint}`);
-    switch(method) {
-        case 'GET': return await handleOfflineGet(tableName, endpoint);
-        case 'POST': return await handleOfflineCreate(tableName, body);
-        case 'PUT': return await handleOfflineUpdate(tableName, body);
-        case 'DELETE': return await handleOfflineDelete(tableName, endpoint);
-        default: throw new Error('Method not supported offline');
-    }
-}
-
-async function handleOfflineGet(tableName, endpoint) {
-    if (!tableName || !localDB[tableName]) throw new Error('غير مدعوم Offline');
-    const url = new URL(endpoint, 'http://localhost');
-    const type = url.searchParams.get('type');
-    let query = localDB[tableName];
-    const results = await query.toArray();
-    if (tableName === 'items') {
-        for (const item of results) {
-            if (item.category_id) item.category = await localDB.categories.get(item.category_id);
-            if (item.base_unit_id) item.base_unit = await localDB.units.get(item.base_unit_id);
-            item.item_units = await localDB.item_units.where('item_id').equals(item.id).toArray();
+        break;
+      }
+      case 'invoices': {
+        const { lines, paid_amount, ...invData } = payload;
+        const invId = await localDB.invoices.add(invData);
+        if (lines?.length) {
+          for (const l of lines) {
+            await localDB.invoiceLines.add({ ...l, invoice_id: invId });
+          }
         }
-    }
-    if (tableName === 'invoices') {
-        for (const inv of results) {
-            inv.invoice_lines = await localDB.invoice_lines.where('invoice_id').equals(inv.id).toArray();
-            if (inv.customer_id) inv.customer = await localDB.customers.get(inv.customer_id);
-            if (inv.supplier_id) inv.supplier = await localDB.suppliers.get(inv.supplier_id);
-            const payments = await localDB.payments.where('invoice_id').equals(inv.id).toArray();
-            inv.paid = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-            inv.balance = inv.total - inv.paid;
+        if (paid_amount > 0) {
+          await localDB.payments.add({
+            invoice_id: invId,
+            customer_id: invData.customer_id || null,
+            supplier_id: invData.supplier_id || null,
+            amount: paid_amount,
+            payment_date: invData.date,
+            notes: 'دفعة تلقائية'
+          });
         }
+        return { id: invId, ...invData };
+      }
+      case 'payments': {
+        const newId = await localDB.payments.add(payload);
+        return { id: newId, ...payload };
+      }
+      case 'expenses': {
+        const newId = await localDB.expenses.add(payload);
+        return { id: newId, ...payload };
+      }
+      default: throw new Error('جدول غير معروف');
     }
-    return results;
-}
+  }
 
-async function handleOfflineCreate(tableName, body) {
-    if (!tableName || !localDB[tableName]) throw new Error('غير مدعوم Offline');
-    const record = {
-        ...body,
-        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        sync_status: 'pending',
-        user_id: localStorage.getItem('user_id') || 'offline_user'
-    };
-    const newId = await localDB[tableName].add(record);
-    await syncManager.queueChange(tableName, newId, 'create', body);
-    return { ...record, id: newId };
-}
+  if (method === 'PUT') {
+    const upd = { ...body };
+    delete upd.initData;
+    switch (tableName) {
+      case 'items': await localDB.items.update(parseInt(id), upd); break;
+      case 'customers': await localDB.customers.update(parseInt(id), upd); break;
+      case 'suppliers': await localDB.suppliers.update(parseInt(id), upd); break;
+      case 'definitions': {
+        const type = params.get('type') || body.type;
+        if (type === 'category') {
+          await localDB.categories.update(parseInt(id), { name: upd.name });
+        } else {
+          await localDB.units.update(parseInt(id), { name: upd.name, abbreviation: upd.abbreviation });
+        }
+        break;
+      }
+      default: throw new Error('تحديث غير مدعوم لهذا الجدول');
+    }
+    return { id: parseInt(id), ...upd };
+  }
 
-async function handleOfflineUpdate(tableName, body) {
-    if (!tableName || !localDB[tableName]) throw new Error('غير مدعوم Offline');
-    const { id, ...updates } = body;
-    await localDB[tableName].update(id, { ...updates, sync_status: 'pending' });
-    await syncManager.queueChange(tableName, id, 'update', body);
-    return await localDB[tableName].get(id);
-}
-
-async function handleOfflineDelete(tableName, endpoint) {
-    if (!tableName || !localDB[tableName]) throw new Error('غير مدعوم Offline');
-    const url = new URL(endpoint, 'http://localhost');
-    const id = url.searchParams.get('id');
-    if (!id) throw new Error('ID مطلوب للحذف');
-    await localDB[tableName].update(parseInt(id) || id, { sync_status: 'pending_delete' });
-    await syncManager.queueChange(tableName, id, 'delete', {});
+  if (method === 'DELETE') {
+    switch (tableName) {
+      case 'items': await localDB.items.delete(parseInt(id)); break;
+      case 'customers': await localDB.customers.delete(parseInt(id)); break;
+      case 'suppliers': await localDB.suppliers.delete(parseInt(id)); break;
+      case 'definitions': {
+        const type = params.get('type') || body.type;
+        if (type === 'category') await localDB.categories.delete(parseInt(id));
+        else await localDB.units.delete(parseInt(id));
+        break;
+      }
+      case 'invoices': {
+        await localDB.invoices.delete(parseInt(id));
+        await localDB.invoiceLines.where({ invoice_id: parseInt(id) }).delete();
+        await localDB.payments.where({ invoice_id: parseInt(id) }).delete();
+        break;
+      }
+      case 'payments': await localDB.payments.delete(parseInt(id)); break;
+      case 'expenses': await localDB.expenses.delete(parseInt(id)); break;
+      default: throw new Error('حذف غير مدعوم');
+    }
     return { success: true };
-}
+  }
 
-async function updateLocalCache(tableName, data) {
-    if (!localDB[tableName] || !Array.isArray(data)) return;
-    await localDB.transaction('rw', localDB[tableName], async () => {
-        for (const record of data) {
-            const exists = await localDB[tableName].get(record.id);
-            if (!exists || exists.sync_status === 'synced') {
-                await localDB[tableName].put({ ...record, sync_status: 'synced' });
-            }
-        }
-    });
+  throw new Error('Method not allowed');
 }
-
-export async function loginStandalone(phone, password) {
-    const API_BASE = window.APP_CONFIG.API_BASE;
-    const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'فشل تسجيل الدخول');
-    localStorage.setItem('auth_token', data.token);
-    localStorage.setItem('user_id', data.user.id);
-    localStorage.setItem('auth_mode', 'jwt');
-    window.APP_CONFIG.AUTH_MODE = 'jwt';
-    return data;
-}
-
-export function logout() {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user_id');
-    localStorage.removeItem('auth_mode');
-    window.location.reload();
-}
-
-export async function checkAuth() {
-    if (window.APP_CONFIG.AUTH_MODE === 'telegram') {
-        const tg = window.Telegram?.WebApp;
-        return !!tg?.initData;
-    }
-    return !!localStorage.getItem('auth_token');
-}
-
-console.log('✅ طبقة API Offline-First جاهزة');

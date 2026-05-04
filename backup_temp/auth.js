@@ -1,11 +1,12 @@
 export function getEnvironment() {
   return {
-    isTelegram: false,
+    isTelegram: false, // Offline standalone
     isStandalone: true
   };
 }
 
 export async function initAuth() {
+  // لا يوجد مصادقة، نستخدم مستخدم افتراضي
   if (!localStorage.getItem('user_id')) {
     localStorage.setItem('user_id', 'offline_user');
     localStorage.setItem('user_name', 'مستخدم');
@@ -21,5 +22,5 @@ export function getCurrentUser() {
 }
 
 export function showStandaloneLogin() {
-  // لا حاجة لواجهة تسجيل الدخول في الوضع المستقل
+  // غير مطلوب في الوضع الـ offline
 }
