@@ -27,34 +27,38 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Capacitor dependencies
+      - name: Install Capacitor + TypeScript
         run: |
           npm install @capacitor/core @capacitor/android @capacitor/cli
+          npm install -D typescript
 
-      - name: Create Capacitor config (JSON)
+      - name: Create Capacitor config (JS)
         run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.alrajhi.accounting",
-            "appName": "الراجحي للمحاسبة",
-            "webDir": ".",
-            "server": {
-              "androidScheme": "https",
-              "cleartext": true
+          cat > capacitor.config.js << 'EOF'
+          /** @type {import('@capacitor/cli').CapacitorConfig} */
+          const config = {
+            appId: 'com.alrajhi.accounting',
+            appName: 'الراجحي للمحاسبة',
+            webDir: '.',
+            server: {
+              androidScheme: 'https',
+              cleartext: true
             },
-            "android": {
-              "allowMixedContent": true,
-              "webContentsDebuggingEnabled": false
+            android: {
+              allowMixedContent: true,
+              webContentsDebuggingEnabled: false
             },
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 2000,
-                "backgroundColor": "#4f46e5",
-                "androidSplashResourceName": "splash",
-                "androidScaleType": "CENTER_CROP"
+            plugins: {
+              SplashScreen: {
+                launchShowDuration: 2000,
+                backgroundColor: '#4f46e5',
+                androidSplashResourceName: 'splash',
+                androidScaleType: 'CENTER_CROP'
               }
             }
-          }
+          };
+
+          module.exports = config;
           EOF
 
       - name: Add Android platform
