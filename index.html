@@ -11,9 +11,12 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/alrajehi_offline/icons/icon-512.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- مكتبات -->
+  <!-- 1. Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- 2. Dexie.js (مكتبة IndexedDB) -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+  <!-- 3. تطبيقنا -->
+  <script src="js/app-offline.js"></script>
 </head>
 <body>
   <div id="loading-screen">
@@ -24,10 +27,13 @@
     </div>
   </div>
 
+  <div id="error-screen" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:99999; color:var(--danger); align-items:center; justify-content:center; font-size:18px; padding:2rem; text-align:center;"></div>
+
   <div id="connection-indicator" class="connection-status online" style="display:none;">● متصل</div>
   <div id="toast-container"></div>
   <div id="modal-portal"></div>
 
+  <!-- باقي عناصر الواجهة مطابقة للملف السابق (اختصاراً) -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <div class="brand-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/></svg></div>
@@ -68,7 +74,6 @@
     </div>
   </div>
 
-  <script src="js/app-offline.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
