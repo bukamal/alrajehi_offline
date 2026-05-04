@@ -2,7 +2,7 @@
   "name": "الراجحي للمحاسبة",
   "short_name": "الراجحي",
   "description": "نظام محاسبة ذكي متكامل - يعمل بدون إنترنت",
-  "start_url": "/alrajehi_offline/",
+  "start_url": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#f1f5f9",

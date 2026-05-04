@@ -5,16 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  
+  <!-- Content Security Policy -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self';">
+  
   <title>الراجحي للمحاسبة</title>
-  <link rel="manifest" href="/alrajehi_offline/manifest.json">
-  <link rel="icon" type="image/png" sizes="192x192" href="/alrajehi_offline/icons/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/alrajehi_offline/icons/icon-512.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- مكتبات -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  
+  <!-- Dexie.js for IndexedDB -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
-  <!-- اعتراض الأخطاء قبل تحميل التطبيق -->
+  
+  <!-- Error interception before app loads -->
   <script>
     window.errors = [];
     window.onerror = function(msg, url, line, col, error) {
@@ -22,10 +27,11 @@
       return false;
     };
   </script>
+  
   <script src="js/app-offline.js"></script>
 </head>
 <body>
-  <!-- شاشة التحميل -->
+  <!-- Loading Screen -->
   <div id="loading-screen">
     <div class="loader-container">
       <div class="loader-logo">ر</div>
@@ -34,13 +40,13 @@
     </div>
   </div>
 
-  <!-- شاشة عرض الأخطاء (تظهر تلقائياً إذا فشل التحميل) -->
+  <!-- Error Screen (appears automatically if loading fails) -->
   <div id="error-screen" style="display:none; position:fixed; inset:0; background:#fff; z-index:99999; color:#dc2626; align-items:flex-start; justify-content:center; font-size:16px; padding:2rem; text-align:center; flex-direction:column; overflow-y:auto;">
     <h2 style="font-size:20px;margin-bottom:16px;">حدث خطأ</h2>
     <pre id="error-details" style="white-space:pre-wrap; word-wrap:break-word; background:#fee2e2; padding:16px; border-radius:8px; text-align:left; max-width:100%; overflow-x:auto;"></pre>
   </div>
 
-  <!-- باقي عناصر الواجهة -->
+  <!-- UI Elements -->
   <div id="connection-indicator" class="connection-status online" style="display:none;">● متصل</div>
   <div id="toast-container"></div>
   <div id="modal-portal"></div>
@@ -85,20 +91,19 @@
     </div>
   </div>
 
-  <!-- سكربت إظهار الأخطاء تلقائياً بعد فشل التحميل -->
+  <!-- Auto error display after loading failure -->
   <script>
     (function() {
       var loader = document.getElementById('loading-screen');
       var errorScreen = document.getElementById('error-screen');
       var errorDetails = document.getElementById('error-details');
 
-      // احتياطي: إخفاء شاشة التحميل بعد 6 ثوانٍ وعرض الأخطاء إن وجدت
       setTimeout(function() {
         if (loader && !loader.classList.contains('hidden')) {
           loader.style.display = 'none';
           if (window.errors.length) {
             errorScreen.style.display = 'flex';
-            errorDetails.textContent = window.errors.join('\n\n');
+            errorDetails.textContent = window.errors.join('\\n\\n');
           } else {
             errorScreen.style.display = 'flex';
             errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحديث الصفحة.';
@@ -111,7 +116,9 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/alrajehi_offline/service-worker.js');
+        navigator.serviceWorker.register('service-worker.js')
+          .then(function(reg) { console.log('[SW] Registered'); })
+          .catch(function(err) { console.warn('[SW] Registration failed:', err); });
       });
     }
   </script>
