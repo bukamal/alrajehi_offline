@@ -11,14 +11,21 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/alrajehi_offline/icons/icon-512.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- 1. Chart.js -->
+  <!-- مكتبات -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- 2. Dexie.js (مكتبة IndexedDB) -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
-  <!-- 3. تطبيقنا -->
+  <!-- اعتراض الأخطاء قبل تحميل التطبيق -->
+  <script>
+    window.errors = [];
+    window.onerror = function(msg, url, line, col, error) {
+      window.errors.push(msg + ' (سطر ' + line + ')');
+      return false;
+    };
+  </script>
   <script src="js/app-offline.js"></script>
 </head>
 <body>
+  <!-- شاشة التحميل -->
   <div id="loading-screen">
     <div class="loader-container">
       <div class="loader-logo">ر</div>
@@ -27,13 +34,17 @@
     </div>
   </div>
 
-  <div id="error-screen" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:99999; color:var(--danger); align-items:center; justify-content:center; font-size:18px; padding:2rem; text-align:center;"></div>
+  <!-- شاشة عرض الأخطاء (تظهر تلقائياً إذا فشل التحميل) -->
+  <div id="error-screen" style="display:none; position:fixed; inset:0; background:#fff; z-index:99999; color:#dc2626; align-items:flex-start; justify-content:center; font-size:16px; padding:2rem; text-align:center; flex-direction:column; overflow-y:auto;">
+    <h2 style="font-size:20px;margin-bottom:16px;">حدث خطأ</h2>
+    <pre id="error-details" style="white-space:pre-wrap; word-wrap:break-word; background:#fee2e2; padding:16px; border-radius:8px; text-align:left; max-width:100%; overflow-x:auto;"></pre>
+  </div>
 
+  <!-- باقي عناصر الواجهة -->
   <div id="connection-indicator" class="connection-status online" style="display:none;">● متصل</div>
   <div id="toast-container"></div>
   <div id="modal-portal"></div>
 
-  <!-- باقي عناصر الواجهة مطابقة للملف السابق (اختصاراً) -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <div class="brand-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/></svg></div>
@@ -74,9 +85,32 @@
     </div>
   </div>
 
+  <!-- سكربت إظهار الأخطاء تلقائياً بعد فشل التحميل -->
+  <script>
+    (function() {
+      var loader = document.getElementById('loading-screen');
+      var errorScreen = document.getElementById('error-screen');
+      var errorDetails = document.getElementById('error-details');
+
+      // احتياطي: إخفاء شاشة التحميل بعد 6 ثوانٍ وعرض الأخطاء إن وجدت
+      setTimeout(function() {
+        if (loader && !loader.classList.contains('hidden')) {
+          loader.style.display = 'none';
+          if (window.errors.length) {
+            errorScreen.style.display = 'flex';
+            errorDetails.textContent = window.errors.join('\n\n');
+          } else {
+            errorScreen.style.display = 'flex';
+            errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحديث الصفحة.';
+          }
+        }
+      }, 6000);
+    })();
+  </script>
+
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      window.addEventListener('load', function() {
         navigator.serviceWorker.register('/alrajehi_offline/service-worker.js');
       });
     }
