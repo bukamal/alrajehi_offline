@@ -33,30 +33,31 @@
   var useMemoryFallback = false;
   var memoryDB = {};
   
-  try {
-    db = new Dexie('AlrajhiDB');
-    db.version(1).stores({
-      items: '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id',
-      customers: '++id, name, phone, address, balance',
-      suppliers: '++id, name, phone, address, balance',
-      categories: '++id, name',
-      units: '++id, name, abbreviation',
-      invoices: '++id, type, customer_id, supplier_id, date, reference, notes, total, status',
-      invoiceLines: '++id, invoice_id, item_id, unit_id, quantity, unit_price, total, description',
-      payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date, notes',
-      expenses: '++id, amount, expense_date, description'
-    });
-  } catch(e) {
-    console.error('[Dexie Init Error]', e);
+  // فحص وجود Dexie قبل الاستخدام
+  if (typeof Dexie !== 'undefined' && Dexie) {
+    try {
+      db = new Dexie('AlrajhiDB');
+      db.version(1).stores({
+        items: '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id',
+        customers: '++id, name, phone, address, balance',
+        suppliers: '++id, name, phone, address, balance',
+        categories: '++id, name',
+        units: '++id, name, abbreviation',
+        invoices: '++id, type, customer_id, supplier_id, date, reference, notes, total, status',
+        invoiceLines: '++id, invoice_id, item_id, unit_id, quantity, unit_price, total, description',
+        payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date, notes',
+        expenses: '++id, amount, expense_date, description'
+      });
+    } catch(e) {
+      console.error('[Dexie Init Error]', e);
+      useMemoryFallback = true;
+      window.showToast && showToast('وضع الذاكرة المؤقتة: البيانات ستُفقد عند إغلاق التطبيق', 'warning');
+    }
+  } else {
+    console.warn('Dexie.js غير متوفرة، سيتم استخدام الذاكرة المؤقتة فقط');
     useMemoryFallback = true;
-    showToast('وضع الذاكرة المؤقتة: البيانات ستُفقد عند إغلاق التطبيق', 'warning');
+    window.showToast && showToast('لم يتم تحميل قاعدة البيانات، البيانات ستكون مؤقتة', 'warning');
   }
-  
-  var localDB = useMemoryFallback ? null : {
-    items: db.items, customers: db.customers, suppliers: db.suppliers,
-    categories: db.categories, units: db.units, invoices: db.invoices,
-    invoiceLines: db.invoiceLines, payments: db.payments, expenses: db.expenses
-  };
   
   // Memory fallback implementation
   function getMemoryTable(name) {
@@ -96,7 +97,7 @@
   }
   
   function getTable(name) {
-    if (useMemoryFallback) return getMemoryTable(name);
+    if (useMemoryFallback || !db) return getMemoryTable(name);
     return db[name];
   }
   
@@ -119,254 +120,255 @@
     container.appendChild(toast); 
     setTimeout(function() { toast.remove(); }, 3000);
   };
+
+// ===== Scroll Lock =====
+var scrollLockPos = 0;
+function lockScroll() {
+  scrollLockPos = window.scrollY || document.documentElement.scrollTop;
+  document.body.style.position = 'fixed'; 
+  document.body.style.top = '-' + scrollLockPos + 'px'; 
+  document.body.style.width = '100%';
+  document.body.classList.add('scroll-locked');
+}
+function unlockScroll() {
+  document.body.style.position = ''; 
+  document.body.style.top = ''; 
+  document.body.style.width = '';
+  document.body.classList.remove('scroll-locked'); 
+  window.scrollTo(0, scrollLockPos);
+}
+
+// ===== API Layer =====
+async function apiCall(endpoint, method, body) {
+  method = method || 'GET'; 
+  body = body || {};
+  var parts = endpoint.split('?')[0].split('/').filter(Boolean);
+  var tableName = parts[0];
+  var queryString = endpoint.includes('?') ? endpoint.split('?')[1] : '';
+  var params = new URLSearchParams(queryString);
+  var id = parts[1] ? parseInt(parts[1]) : (params.get('id') ? parseInt(params.get('id')) : null);
   
-  // ===== Scroll Lock =====
-  var scrollLockPos = 0;
-  function lockScroll() {
-    scrollLockPos = window.scrollY || document.documentElement.scrollTop;
-    document.body.style.position = 'fixed'; 
-    document.body.style.top = '-' + scrollLockPos + 'px'; 
-    document.body.style.width = '100%';
-    document.body.classList.add('scroll-locked');
-  }
-  function unlockScroll() {
-    document.body.style.position = ''; 
-    document.body.style.top = ''; 
-    document.body.style.width = '';
-    document.body.classList.remove('scroll-locked'); 
-    window.scrollTo(0, scrollLockPos);
-  }
-  
-  // ===== API Layer =====
-  async function apiCall(endpoint, method, body) {
-    method = method || 'GET'; 
-    body = body || {};
-    var parts = endpoint.split('?')[0].split('/').filter(Boolean);
-    var tableName = parts[0];
-    var queryString = endpoint.includes('?') ? endpoint.split('?')[1] : '';
-    var params = new URLSearchParams(queryString);
-    var id = parts[1] ? parseInt(parts[1]) : (params.get('id') ? parseInt(params.get('id')) : null);
-    
-    try {
-      if (method === 'GET') {
-        switch (tableName) {
-          case 'items': return await getTable('items').toArray();
-          case 'customers': return await getTable('customers').toArray();
-          case 'suppliers': return await getTable('suppliers').toArray();
-          case 'definitions':
-            if (params.get('type') === 'category') return await getTable('categories').toArray();
-            if (params.get('type') === 'unit') return await getTable('units').toArray();
-            return [];
-          case 'invoices': {
-            var invs = await getTable('invoices').toArray();
-            for (var i = 0; i < invs.length; i++) {
-              var inv = invs[i];
-              var pmts = await getTable('payments').where({invoice_id: inv.id}).toArray();
-              inv.paid = pmts.reduce(function(s, p) { return s + (p.amount || 0); }, 0);
-              inv.balance = (inv.total || 0) - inv.paid;
-            }
-            return invs;
+  try {
+    if (method === 'GET') {
+      switch (tableName) {
+        case 'items': return await getTable('items').toArray();
+        case 'customers': return await getTable('customers').toArray();
+        case 'suppliers': return await getTable('suppliers').toArray();
+        case 'definitions':
+          if (params.get('type') === 'category') return await getTable('categories').toArray();
+          if (params.get('type') === 'unit') return await getTable('units').toArray();
+          return [];
+        case 'invoices': {
+          var invs = await getTable('invoices').toArray();
+          for (var i = 0; i < invs.length; i++) {
+            var inv = invs[i];
+            var pmts = await getTable('payments').where({invoice_id: inv.id}).toArray();
+            inv.paid = pmts.reduce(function(s, p) { return s + (p.amount || 0); }, 0);
+            inv.balance = (inv.total || 0) - inv.paid;
           }
-          case 'payments': return await getTable('payments').toArray();
-          case 'expenses': return await getTable('expenses').toArray();
-          default: return [];
+          return invs;
         }
-      } else if (method === 'POST') {
-        var payload = JSON.parse(JSON.stringify(body));
-        switch (tableName) {
-          case 'items': { 
-            var cleanPayload = {
-              name: sanitizeInput(payload.name),
-              purchase_price: validateNumber(payload.purchase_price),
-              selling_price: validateNumber(payload.selling_price),
-              quantity: validateNumber(payload.quantity),
-              category_id: payload.category_id || null,
-              item_type: payload.item_type || 'product',
-              base_unit_id: payload.base_unit_id || null
-            };
-            var newId = await getTable('items').add(cleanPayload); 
-            return { id: newId, ...cleanPayload }; 
-          }
-          case 'customers': { 
-            var newId = await getTable('customers').add({...payload, balance: validateNumber(payload.balance)}); 
-            return { id: newId, ...payload }; 
-          }
-          case 'suppliers': { 
-            var newId = await getTable('suppliers').add({...payload, balance: 0}); 
-            return { id: newId, ...payload }; 
-          }
-          case 'definitions': {
-            var type = params.get('type') || body.type;
-            if (type === 'category') { 
-              var newId = await getTable('categories').add({name: sanitizeInput(payload.name)}); 
-              return { id: newId, name: payload.name }; 
-            }
-            if (type === 'unit') { 
-              var newId = await getTable('units').add({name: sanitizeInput(payload.name), abbreviation: payload.abbreviation}); 
-              return { id: newId, name: payload.name, abbreviation: payload.abbreviation }; 
-            }
-            break;
-          }
-          case 'invoices': {
-            var lines = payload.lines; 
-            delete payload.lines;
-            var paid_amount = validateNumber(payload.paid_amount); 
-            delete payload.paid_amount;
-            var invId = await getTable('invoices').add(payload);
-            if (lines && lines.length) {
-              for (var l of lines) {
-                await getTable('invoiceLines').add({...l, invoice_id: invId});
-              }
-            }
-            if (paid_amount > 0) {
-              await getTable('payments').add({
-                invoice_id: invId, 
-                customer_id: payload.customer_id || null, 
-                supplier_id: payload.supplier_id || null, 
-                amount: paid_amount, 
-                payment_date: payload.date, 
-                notes: 'دفعة تلقائية'
-              });
-            }
-            return { id: invId, ...payload };
-          }
-          case 'payments': { 
-            var newId = await getTable('payments').add(payload); 
-            return { id: newId, ...payload }; 
-          }
-          case 'expenses': { 
-            var newId = await getTable('expenses').add(payload); 
-            return { id: newId, ...payload }; 
-          }
-        }
-      } else if (method === 'PUT') {
-        var upd = JSON.parse(JSON.stringify(body)); 
-        if (!id) id = body.id;
-        switch (tableName) {
-          case 'items': 
-            if (upd.name) upd.name = sanitizeInput(upd.name);
-            if (upd.purchase_price) upd.purchase_price = validateNumber(upd.purchase_price);
-            if (upd.selling_price) upd.selling_price = validateNumber(upd.selling_price);
-            if (upd.quantity) upd.quantity = validateNumber(upd.quantity);
-            await getTable('items').update(id, upd); 
-            break;
-          case 'customers': await getTable('customers').update(id, upd); break;
-          case 'suppliers': await getTable('suppliers').update(id, upd); break;
-          case 'definitions': {
-            if ((params.get('type') || body.type) === 'category') {
-              if (upd.name) upd.name = sanitizeInput(upd.name);
-              await getTable('categories').update(id, {name: upd.name});
-            } else {
-              await getTable('units').update(id, {name: sanitizeInput(upd.name), abbreviation: upd.abbreviation});
-            }
-            break;
-          }
-        }
-        return { id: id, ...upd };
-      } else if (method === 'DELETE') {
-        if (!id) id = body.id || parseInt(params.get('id'));
-        switch (tableName) {
-          case 'items': await getTable('items').delete(id); break;
-          case 'customers': await getTable('customers').delete(id); break;
-          case 'suppliers': await getTable('suppliers').delete(id); break;
-          case 'definitions':
-            if ((params.get('type') || body.type) === 'category') await getTable('categories').delete(id);
-            else await getTable('units').delete(id);
-            break;
-          case 'invoices': 
-            await getTable('invoices').delete(id); 
-            await getTable('invoiceLines').where({invoice_id: id}).delete(); 
-            await getTable('payments').where({invoice_id: id}).delete(); 
-            break;
-          case 'payments': await getTable('payments').delete(id); break;
-          case 'expenses': await getTable('expenses').delete(id); break;
-        }
-        return { success: true };
+        case 'payments': return await getTable('payments').toArray();
+        case 'expenses': return await getTable('expenses').toArray();
+        default: return [];
       }
-    } catch(e) {
-      console.error('[API Error]', e);
-      showToast('خطأ في قاعدة البيانات: ' + e.message, 'error');
-      throw e;
+    } else if (method === 'POST') {
+      var payload = JSON.parse(JSON.stringify(body));
+      switch (tableName) {
+        case 'items': { 
+          var cleanPayload = {
+            name: sanitizeInput(payload.name),
+            purchase_price: validateNumber(payload.purchase_price),
+            selling_price: validateNumber(payload.selling_price),
+            quantity: validateNumber(payload.quantity),
+            category_id: payload.category_id || null,
+            item_type: payload.item_type || 'product',
+            base_unit_id: payload.base_unit_id || null
+          };
+          var newId = await getTable('items').add(cleanPayload); 
+          return { id: newId, ...cleanPayload }; 
+        }
+        case 'customers': { 
+          var newId = await getTable('customers').add({...payload, balance: validateNumber(payload.balance)}); 
+          return { id: newId, ...payload }; 
+        }
+        case 'suppliers': { 
+          var newId = await getTable('suppliers').add({...payload, balance: 0}); 
+          return { id: newId, ...payload }; 
+        }
+        case 'definitions': {
+          var type = params.get('type') || body.type;
+          if (type === 'category') { 
+            var newId = await getTable('categories').add({name: sanitizeInput(payload.name)}); 
+            return { id: newId, name: payload.name }; 
+          }
+          if (type === 'unit') { 
+            var newId = await getTable('units').add({name: sanitizeInput(payload.name), abbreviation: payload.abbreviation}); 
+            return { id: newId, name: payload.name, abbreviation: payload.abbreviation }; 
+          }
+          break;
+        }
+        case 'invoices': {
+          var lines = payload.lines; 
+          delete payload.lines;
+          var paid_amount = validateNumber(payload.paid_amount); 
+          delete payload.paid_amount;
+          var invId = await getTable('invoices').add(payload);
+          if (lines && lines.length) {
+            for (var l of lines) {
+              await getTable('invoiceLines').add({...l, invoice_id: invId});
+            }
+          }
+          if (paid_amount > 0) {
+            await getTable('payments').add({
+              invoice_id: invId, 
+              customer_id: payload.customer_id || null, 
+              supplier_id: payload.supplier_id || null, 
+              amount: paid_amount, 
+              payment_date: payload.date, 
+              notes: 'دفعة تلقائية'
+            });
+          }
+          return { id: invId, ...payload };
+        }
+        case 'payments': { 
+          var newId = await getTable('payments').add(payload); 
+          return { id: newId, ...payload }; 
+        }
+        case 'expenses': { 
+          var newId = await getTable('expenses').add(payload); 
+          return { id: newId, ...payload }; 
+        }
+      }
+    } else if (method === 'PUT') {
+      var upd = JSON.parse(JSON.stringify(body)); 
+      if (!id) id = body.id;
+      switch (tableName) {
+        case 'items': 
+          if (upd.name) upd.name = sanitizeInput(upd.name);
+          if (upd.purchase_price) upd.purchase_price = validateNumber(upd.purchase_price);
+          if (upd.selling_price) upd.selling_price = validateNumber(upd.selling_price);
+          if (upd.quantity) upd.quantity = validateNumber(upd.quantity);
+          await getTable('items').update(id, upd); 
+          break;
+        case 'customers': await getTable('customers').update(id, upd); break;
+        case 'suppliers': await getTable('suppliers').update(id, upd); break;
+        case 'definitions': {
+          if ((params.get('type') || body.type) === 'category') {
+            if (upd.name) upd.name = sanitizeInput(upd.name);
+            await getTable('categories').update(id, {name: upd.name});
+          } else {
+            await getTable('units').update(id, {name: sanitizeInput(upd.name), abbreviation: upd.abbreviation});
+          }
+          break;
+        }
+      }
+      return { id: id, ...upd };
+    } else if (method === 'DELETE') {
+      if (!id) id = body.id || parseInt(params.get('id'));
+      switch (tableName) {
+        case 'items': await getTable('items').delete(id); break;
+        case 'customers': await getTable('customers').delete(id); break;
+        case 'suppliers': await getTable('suppliers').delete(id); break;
+        case 'definitions':
+          if ((params.get('type') || body.type) === 'category') await getTable('categories').delete(id);
+          else await getTable('units').delete(id);
+          break;
+        case 'invoices': 
+          await getTable('invoices').delete(id); 
+          await getTable('invoiceLines').where({invoice_id: id}).delete(); 
+          await getTable('payments').where({invoice_id: id}).delete(); 
+          break;
+        case 'payments': await getTable('payments').delete(id); break;
+        case 'expenses': await getTable('expenses').delete(id); break;
+      }
+      return { success: true };
     }
-    throw new Error('Method not allowed');
+  } catch(e) {
+    console.error('[API Error]', e);
+    showToast('خطأ في قاعدة البيانات: ' + e.message, 'error');
+    throw e;
   }
-  
-  // ===== Modal System =====
-  var activeModal = null;
-  function openModal(opt) {
-    var portal = document.getElementById('modal-portal'); 
-    if (!portal) return {};
-    if (activeModal) activeModal.close();
-    var overlay = document.createElement('div'); 
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = '<div class="modal-box"><div class="modal-header"><h3 class="modal-title">' + (opt.title || '') + '</h3><button class="modal-close">&times;</button></div><div class="modal-body">' + (opt.bodyHTML || '') + '</div>' + (opt.footerHTML ? '<div class="modal-footer">' + opt.footerHTML + '</div>' : '') + '</div>';
-    portal.appendChild(overlay); 
-    lockScroll(); 
-    activeModal = overlay;
-    function close() { 
-      overlay.remove(); 
-      activeModal = null; 
-      unlockScroll(); 
-      if (opt.onClose) opt.onClose(); 
-    }
-    overlay.querySelector('.modal-close').onclick = close;
-    overlay.addEventListener('click', function(e) { 
-      if (e.target === overlay) close(); 
+  throw new Error('Method not allowed');
+}
+
+// ===== Modal System =====
+var activeModal = null;
+function openModal(opt) {
+  var portal = document.getElementById('modal-portal'); 
+  if (!portal) return {};
+  if (activeModal) activeModal.close();
+  var overlay = document.createElement('div'); 
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = '<div class="modal-box"><div class="modal-header"><h3 class="modal-title">' + (opt.title || '') + '</h3><button class="modal-close">&times;</button></div><div class="modal-body">' + (opt.bodyHTML || '') + '</div>' + (opt.footerHTML ? '<div class="modal-footer">' + opt.footerHTML + '</div>' : '') + '</div>';
+  portal.appendChild(overlay); 
+  lockScroll(); 
+  activeModal = overlay;
+  function close() { 
+    overlay.remove(); 
+    activeModal = null; 
+    unlockScroll(); 
+    if (opt.onClose) opt.onClose(); 
+  }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.addEventListener('click', function(e) { 
+    if (e.target === overlay) close(); 
+  });
+  return { close: close, element: overlay };
+}
+
+function confirmDialog(msg) {
+  return new Promise(function(resolve) {
+    var modal = openModal({
+      title: 'تأكيد العملية',
+      bodyHTML: '<p style="font-size:15px;line-height:1.7;">' + sanitizeInput(msg) + '</p>',
+      footerHTML: '<button class="btn btn-secondary" id="cf-cancel">إلغاء</button><button class="btn btn-danger" id="cf-ok">تأكيد</button>',
+      onClose: function() { resolve(false); }
     });
-    return { close: close, element: overlay };
-  }
-  
-  function confirmDialog(msg) {
-    return new Promise(function(resolve) {
-      var modal = openModal({
-        title: 'تأكيد العملية',
-        bodyHTML: '<p style="font-size:15px;line-height:1.7;">' + sanitizeInput(msg) + '</p>',
-        footerHTML: '<button class="btn btn-secondary" id="cf-cancel">إلغاء</button><button class="btn btn-danger" id="cf-ok">تأكيد</button>',
-        onClose: function() { resolve(false); }
-      });
-      modal.element.querySelector('#cf-cancel').onclick = function() { modal.close(); resolve(false); };
-      modal.element.querySelector('#cf-ok').onclick = function() { modal.close(); resolve(true); };
-    });
-  }
-  
-  // ===== Icons =====
-  var ICONS = {
-    plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
-    edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
-    trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
-  };
-  
-  // ===== Navigation =====
-  function initNavigation() {
-    var nav = document.getElementById('sidebar-nav'); 
-    if (!nav) return;
-    var tabs = ['dashboard','items','sale-invoice','purchase-invoice','customers','suppliers','categories','units','payments','expenses','invoices','reports'];
-    tabs.forEach(function(tab) {
-      var btn = document.createElement('button');
-      btn.className = 'nav-item' + (tab === 'dashboard' ? ' active' : '');
-      btn.dataset.tab = tab; 
-      btn.textContent = tab;
-      btn.onclick = function() { navigateTo(tab); };
-      nav.appendChild(btn);
-    });
-  }
-  
-  function setActiveTab(tabName) {
-    document.querySelectorAll('.nav-item,.bottom-item').forEach(function(el) { 
-      el.classList.toggle('active', el.dataset.tab === tabName); 
-    });
-  }
-  
-  function navigateTo(tab) {
-    setActiveTab(tab);
-    var moreMenu = document.getElementById('more-menu'); 
-    if (moreMenu) moreMenu.style.display = 'none';
-    var sidebar = document.getElementById('sidebar'); 
-    if (sidebar) sidebar.classList.remove('open');
-    var content = document.getElementById('tab-content'); 
-    if (!content) return;
-    content.style.opacity = '0';
-    setTimeout(function() {
+    modal.element.querySelector('#cf-cancel').onclick = function() { modal.close(); resolve(false); };
+    modal.element.querySelector('#cf-ok').onclick = function() { modal.close(); resolve(true); };
+  });
+}
+
+// ===== Icons =====
+var ICONS = {
+  plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+};
+
+// ===== Navigation =====
+function initNavigation() {
+  var nav = document.getElementById('sidebar-nav'); 
+  if (!nav) return;
+  var tabs = ['dashboard','items','sale-invoice','purchase-invoice','customers','suppliers','categories','units','payments','expenses','invoices','reports'];
+  tabs.forEach(function(tab) {
+    var btn = document.createElement('button');
+    btn.className = 'nav-item' + (tab === 'dashboard' ? ' active' : '');
+    btn.dataset.tab = tab; 
+    btn.textContent = tab;
+    btn.onclick = function() { navigateTo(tab); };
+    nav.appendChild(btn);
+  });
+}
+
+function setActiveTab(tabName) {
+  document.querySelectorAll('.nav-item,.bottom-item').forEach(function(el) { 
+    el.classList.toggle('active', el.dataset.tab === tabName); 
+  });
+}
+
+function navigateTo(tab) {
+  setActiveTab(tab);
+  var moreMenu = document.getElementById('more-menu'); 
+  if (moreMenu) moreMenu.style.display = 'none';
+  var sidebar = document.getElementById('sidebar'); 
+  if (sidebar) sidebar.classList.remove('open');
+  var content = document.getElementById('tab-content'); 
+  if (!content) return;
+  content.style.opacity = '0';
+  setTimeout(function() {
+    try {
       switch (tab) {
         case 'dashboard': loadDashboard(); break;
         case 'items': loadItems(); break;
@@ -381,285 +383,289 @@
         case 'invoices': loadInvoices(); break;
         case 'reports': loadReports(); break;
       }
-      content.style.transition = 'all 0.3s'; 
-      content.style.opacity = '1';
-    }, 50);
-  }
-  
-  // ===== Dashboard =====
-  async function loadDashboard() {
-    try {
-      var invoices = await apiCall('/invoices','GET');
-      var totalSales = invoices.filter(function(i) { return i.type === 'sale'; }).reduce(function(s, i) { return s + (i.total || 0); }, 0);
-      var totalPurchases = invoices.filter(function(i) { return i.type === 'purchase'; }).reduce(function(s, i) { return s + (i.total || 0); }, 0);
-      var expenses = await apiCall('/expenses','GET');
-      var totalExpenses = expenses.reduce(function(s, e) { return s + (e.amount || 0); }, 0);
-      var netProfit = totalSales - totalPurchases - totalExpenses;
-      var tc = document.getElementById('tab-content'); 
-      if (!tc) return;
-      tc.innerHTML = '<div class="stats-grid"><div class="stat-card profit"><div class="stat-label">صافي الربح</div><div class="stat-value ' + (netProfit >= 0 ? 'positive' : 'negative') + '">' + formatNumber(netProfit) + '</div></div><div class="stat-card cash"><div class="stat-label">المبيعات</div><div class="stat-value">' + formatNumber(totalSales) + '</div></div><div class="stat-card receivables"><div class="stat-label">المشتريات</div><div class="stat-value">' + formatNumber(totalPurchases) + '</div></div><div class="stat-card payables"><div class="stat-label">المصاريف</div><div class="stat-value">' + formatNumber(totalExpenses) + '</div></div></div><div class="card" style="margin-bottom:16px;"><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" id="btn-export">تصدير</button><button class="btn btn-sm btn-secondary" id="btn-import">استيراد</button></div></div>';
-      
-      var exportBtn = document.getElementById('btn-export');
-      var importBtn = document.getElementById('btn-import');
-      
-      if (exportBtn) exportBtn.onclick = async function() {
+    } catch (e) {
+      console.error(e);
+      showToast('خطأ في التحميل', 'error');
+    }
+    content.style.transition = 'all 0.3s'; 
+    content.style.opacity = '1';
+  }, 50);
+}
+
+// ===== Dashboard =====
+async function loadDashboard() {
+  try {
+    var invoices = await apiCall('/invoices','GET');
+    var totalSales = invoices.filter(function(i) { return i.type === 'sale'; }).reduce(function(s, i) { return s + (i.total || 0); }, 0);
+    var totalPurchases = invoices.filter(function(i) { return i.type === 'purchase'; }).reduce(function(s, i) { return s + (i.total || 0); }, 0);
+    var expenses = await apiCall('/expenses','GET');
+    var totalExpenses = expenses.reduce(function(s, e) { return s + (e.amount || 0); }, 0);
+    var netProfit = totalSales - totalPurchases - totalExpenses;
+    var tc = document.getElementById('tab-content'); 
+    if (!tc) return;
+    tc.innerHTML = '<div class="stats-grid"><div class="stat-card profit"><div class="stat-label">صافي الربح</div><div class="stat-value ' + (netProfit >= 0 ? 'positive' : 'negative') + '">' + formatNumber(netProfit) + '</div></div><div class="stat-card cash"><div class="stat-label">المبيعات</div><div class="stat-value">' + formatNumber(totalSales) + '</div></div><div class="stat-card receivables"><div class="stat-label">المشتريات</div><div class="stat-value">' + formatNumber(totalPurchases) + '</div></div><div class="stat-card payables"><div class="stat-label">المصاريف</div><div class="stat-value">' + formatNumber(totalExpenses) + '</div></div></div><div class="card" style="margin-bottom:16px;"><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" id="btn-export">تصدير</button><button class="btn btn-sm btn-secondary" id="btn-import">استيراد</button></div></div>';
+    
+    var exportBtn = document.getElementById('btn-export');
+    var importBtn = document.getElementById('btn-import');
+    
+    if (exportBtn) exportBtn.onclick = async function() {
+      try {
+        var tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
+        var data = {}; 
+        for (var t of tables) data[t] = await getTable(t).toArray();
+        var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+        var a = document.createElement('a'); 
+        a.href = URL.createObjectURL(blob);
+        a.download = 'alrajhi-backup-' + new Date().toISOString().slice(0,10) + '.json'; 
+        a.click();
+        showToast('تم التصدير بنجاح', 'success');
+      } catch(e) {
+        showToast('خطأ في التصدير: ' + e.message, 'error');
+      }
+    };
+    
+    if (importBtn) importBtn.onclick = function() {
+      var inp = document.createElement('input'); 
+      inp.type = 'file'; 
+      inp.accept = '.json';
+      inp.onchange = async function(e) {
         try {
-          var tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
-          var data = {}; 
-          for (var t of tables) data[t] = await getTable(t).toArray();
-          var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-          var a = document.createElement('a'); 
-          a.href = URL.createObjectURL(blob);
-          a.download = 'alrajhi-backup-' + new Date().toISOString().slice(0,10) + '.json'; 
-          a.click();
-          showToast('تم التصدير بنجاح', 'success');
+          var file = e.target.files[0]; 
+          if (!file) return;
+          var text = await file.text(); 
+          var data = JSON.parse(text);
+          if (await confirmDialog('سيتم استبدال جميع البيانات. هل أنت متأكد؟')) {
+            var tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
+            for (var t of tables) { 
+              await getTable(t).clear(); 
+              if (data[t]) await getTable(t).bulkAdd(data[t]); 
+            }
+            showToast('تم الاستيراد بنجاح', 'success'); 
+            loadDashboard();
+          }
         } catch(e) {
-          showToast('خطأ في التصدير: ' + e.message, 'error');
+          showToast('خطأ في الاستيراد: ' + e.message, 'error');
         }
       };
-      
-      if (importBtn) importBtn.onclick = function() {
-        var inp = document.createElement('input'); 
-        inp.type = 'file'; 
-        inp.accept = '.json';
-        inp.onchange = async function(e) {
-          try {
-            var file = e.target.files[0]; 
-            if (!file) return;
-            var text = await file.text(); 
-            var data = JSON.parse(text);
-            if (await confirmDialog('سيتم استبدال جميع البيانات. هل أنت متأكد؟')) {
-              var tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
-              for (var t of tables) { 
-                await getTable(t).clear(); 
-                if (data[t]) await getTable(t).bulkAdd(data[t]); 
-              }
-              showToast('تم الاستيراد بنجاح', 'success'); 
-              loadDashboard();
-            }
-          } catch(e) {
-            showToast('خطأ في الاستيراد: ' + e.message, 'error');
-          }
-        };
-        inp.click();
-      };
-    } catch(e) {
-      showToast('خطأ في تحميل لوحة التحكم', 'error');
-      console.error(e);
-    }
+      inp.click();
+    };
+  } catch(e) {
+    showToast('خطأ في تحميل لوحة التحكم', 'error');
+    console.error(e);
   }
-  
-  // ===== Caches =====
-  var itemsCache = [], customersCache = [], suppliersCache = [], invoicesCache = [], categoriesCache = [], unitsCache = [];
-  
-  // ===== Items =====
-  async function loadItems() {
+}
+
+// ===== Caches =====
+var itemsCache = [], customersCache = [], suppliersCache = [], invoicesCache = [], categoriesCache = [], unitsCache = [];
+
+// ===== Items =====
+async function loadItems() {
+  try {
+    itemsCache = await apiCall('/items','GET');
+    var tc = document.getElementById('tab-content'); 
+    if (!tc) return;
+    tc.innerHTML = '<div class="card"><div class="card-header"><h3 class="card-title">المواد</h3><button class="btn btn-primary btn-sm" id="btn-add-item">' + ICONS.plus + ' إضافة</button></div><input class="input" id="items-search" placeholder="بحث..."></div><div id="items-list"></div>';
+    var addBtn = document.getElementById('btn-add-item'); 
+    if (addBtn) addBtn.addEventListener('click', showAddItemModal);
+    var search = document.getElementById('items-search'); 
+    if (search) search.addEventListener('input', function(e) { renderFilteredItems(e.target.value); });
+    renderFilteredItems();
+  } catch(e) {
+    showToast('خطأ في تحميل المواد', 'error');
+  }
+}
+
+function renderFilteredItems(filter) {
+  var q = sanitizeInput((filter || '').trim().toLowerCase());
+  var filtered = itemsCache.filter(function(i) { 
+    return (i.name || '').toLowerCase().includes(q); 
+  });
+  var container = document.getElementById('items-list'); 
+  if (!container) return;
+  if (!filtered.length) { 
+    container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>'; 
+    return; 
+  }
+  var html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الكمية</th><th>سعر الشراء</th><th>سعر البيع</th><th></th></tr></thead><tbody>';
+  filtered.forEach(function(item) {
+    html += '<tr><td style="font-weight:700;">' + sanitizeInput(item.name) + '</td><td>' + (item.quantity || 0) + '</td><td>' + formatNumber(item.purchase_price) + '</td><td>' + formatNumber(item.selling_price) + '</td><td><button class="btn btn-secondary btn-sm edit-item-btn" data-id="' + item.id + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-item-btn" data-id="' + item.id + '">' + ICONS.trash + '</button></td></tr>';
+  });
+  html += '</tbody></table></div>'; 
+  container.innerHTML = html;
+  container.querySelectorAll('.edit-item-btn').forEach(function(b) { 
+    b.addEventListener('click', function(e) { 
+      showEditItemModal(e.target.closest('button').dataset.id); 
+    }); 
+  });
+  container.querySelectorAll('.delete-item-btn').forEach(function(b) { 
+    b.addEventListener('click', async function(e) { 
+      if (await confirmDialog('حذف المادة؟')) { 
+        try {
+          await apiCall('/items?id=' + e.target.closest('button').dataset.id, 'DELETE'); 
+          showToast('تم الحذف','success'); 
+          loadItems(); 
+        } catch(err) {
+          showToast('خطأ في الحذف', 'error');
+        }
+      } 
+    }); 
+  });
+}
+
+function showAddItemModal() {
+  var body = '<div class="form-group"><label class="form-label">اسم المادة</label><input class="input" id="fm-name"></div><div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" step="0.01" value="0"></div><div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" step="0.01" value="0"></div><div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-qty" type="number" step="any" value="0"></div>';
+  var modal = openModal({
+    title: 'إضافة مادة جديدة',
+    bodyHTML: body,
+    footerHTML: '<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">' + ICONS.plus + ' حفظ</button>'
+  });
+  modal.element.querySelector('#fm-cancel').onclick = function() { modal.close(); };
+  modal.element.querySelector('#fm-save').onclick = async function() {
     try {
-      itemsCache = await apiCall('/items','GET');
-      var tc = document.getElementById('tab-content'); 
-      if (!tc) return;
-      tc.innerHTML = '<div class="card"><div class="card-header"><h3 class="card-title">المواد</h3><button class="btn btn-primary btn-sm" id="btn-add-item">' + ICONS.plus + ' إضافة</button></div><input class="input" id="items-search" placeholder="بحث..."></div><div id="items-list"></div>';
-      var addBtn = document.getElementById('btn-add-item'); 
-      if (addBtn) addBtn.addEventListener('click', showAddItemModal);
-      var search = document.getElementById('items-search'); 
-      if (search) search.addEventListener('input', function(e) { renderFilteredItems(e.target.value); });
-      renderFilteredItems();
+      var name = sanitizeInput(modal.element.querySelector('#fm-name').value.trim());
+      if (!name) return showToast('اسم المادة مطلوب', 'warning');
+      await apiCall('/items', 'POST', {
+        name: name,
+        purchase_price: validateNumber(modal.element.querySelector('#fm-purchase').value),
+        selling_price: validateNumber(modal.element.querySelector('#fm-selling').value),
+        quantity: validateNumber(modal.element.querySelector('#fm-qty').value)
+      });
+      modal.close(); 
+      showToast('تم الحفظ بنجاح', 'success'); 
+      loadItems();
     } catch(e) {
-      showToast('خطأ في تحميل المواد', 'error');
+      showToast('خطأ في الحفظ: ' + e.message, 'error');
     }
+  };
+}
+
+function showEditItemModal(id) {
+  var item = itemsCache.find(function(i) { return i.id == id; }); 
+  if (!item) return;
+  var body = '<div class="form-group"><label class="form-label">اسم المادة</label><input class="input" id="fm-name" value="' + sanitizeInput(item.name || '') + '"></div><div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" step="0.01" value="' + (item.purchase_price || 0) + '"></div><div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" step="0.01" value="' + (item.selling_price || 0) + '"></div><div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-qty" type="number" step="any" value="' + (item.quantity || 0) + '"></div>';
+  var modal = openModal({
+    title: 'تعديل المادة',
+    bodyHTML: body,
+    footerHTML: '<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">' + ICONS.edit + ' حفظ</button>'
+  });
+  modal.element.querySelector('#fm-cancel').onclick = function() { modal.close(); };
+  modal.element.querySelector('#fm-save').onclick = async function() {
+    try {
+      await apiCall('/items', 'PUT', {
+        id: id,
+        name: sanitizeInput(modal.element.querySelector('#fm-name').value.trim()),
+        purchase_price: validateNumber(modal.element.querySelector('#fm-purchase').value),
+        selling_price: validateNumber(modal.element.querySelector('#fm-selling').value),
+        quantity: validateNumber(modal.element.querySelector('#fm-qty').value)
+      });
+      modal.close(); 
+      showToast('تم التعديل بنجاح', 'success'); 
+      loadItems();
+    } catch(e) {
+      showToast('خطأ في التعديل: ' + e.message, 'error');
+    }
+  };
+}
+
+// ===== Generic Sections =====
+async function loadGenericSection(endpoint, cacheKey) {
+  try {
+    var data = await apiCall(endpoint, 'GET');
+    if (cacheKey === 'customers') customersCache = data;
+    else if (cacheKey === 'suppliers') suppliersCache = data;
+    else if (cacheKey === 'categories') categoriesCache = data;
+    var titles = { customers: 'العملاء', suppliers: 'الموردين', categories: 'التصنيفات' };
+    var title = titles[cacheKey] || cacheKey;
+    var tc = document.getElementById('tab-content'); 
+    if (!tc) return;
+    var html = '<div class="card"><div class="card-header"><h3 class="card-title">' + title + '</h3><button class="btn btn-primary btn-sm add-btn" data-type="' + cacheKey + '">' + ICONS.plus + ' إضافة</button></div></div>';
+    if (!data.length) html += '<div class="empty-state"><h3>لا يوجد ' + title + '</h3></div>';
+    else data.forEach(function(item) {
+      html += '<div class="card card-hover" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:800;">' + sanitizeInput(item.name) + '</span><div style="display:flex;gap:6px;"><button class="btn btn-secondary btn-sm edit-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.trash + '</button></div></div>';
+    });
+    tc.innerHTML = html;
+  } catch(e) {
+    showToast('خطأ في تحميل البيانات', 'error');
   }
-  
-  function renderFilteredItems(filter) {
-    var q = sanitizeInput((filter || '').trim().toLowerCase());
-    var filtered = itemsCache.filter(function(i) { 
-      return (i.name || '').toLowerCase().includes(q); 
-    });
-    var container = document.getElementById('items-list'); 
-    if (!container) return;
-    if (!filtered.length) { 
-      container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>'; 
-      return; 
+}
+
+// ===== Units =====
+async function loadUnitsSection() {
+  try {
+    unitsCache = await apiCall('/definitions?type=unit','GET');
+    var tc = document.getElementById('tab-content'); 
+    if (!tc) return;
+    var html = '<div class="card"><div class="card-header"><h3 class="card-title">وحدات القياس</h3><button class="btn btn-primary btn-sm" id="btn-add-unit">' + ICONS.plus + ' إضافة</button></div></div>';
+    if (!unitsCache.length) html += '<div class="empty-state"><h3>لا توجد وحدات</h3></div>';
+    else {
+      html += '<div class="table-wrap"><table class="table"><thead><tr><th>الوحدة</th><th>الاختصار</th><th></th></tr></thead><tbody>';
+      unitsCache.forEach(function(u) {
+        html += '<tr><td>' + sanitizeInput(u.name) + '</td><td>' + (sanitizeInput(u.abbreviation) || '-') + '</td><td><button class="btn btn-secondary btn-sm edit-unit-btn" data-id="' + u.id + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-unit-btn" data-id="' + u.id + '">' + ICONS.trash + '</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
     }
-    var html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الكمية</th><th>سعر الشراء</th><th>سعر البيع</th><th></th></tr></thead><tbody>';
-    filtered.forEach(function(item) {
-      html += '<tr><td style="font-weight:700;">' + sanitizeInput(item.name) + '</td><td>' + (item.quantity || 0) + '</td><td>' + formatNumber(item.purchase_price) + '</td><td>' + formatNumber(item.selling_price) + '</td><td><button class="btn btn-secondary btn-sm edit-item-btn" data-id="' + item.id + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-item-btn" data-id="' + item.id + '">' + ICONS.trash + '</button></td></tr>';
+    tc.innerHTML = html;
+    var addBtn = document.getElementById('btn-add-unit'); 
+    if (addBtn) addBtn.addEventListener('click', showAddUnitModal);
+    document.querySelectorAll('.edit-unit-btn').forEach(function(b) {
+      b.addEventListener('click', function(e) {
+        var u = unitsCache.find(function(x) { return x.id == e.target.closest('button').dataset.id; });
+        if (u) showFormModal('تعديل وحدة', [{id:'name',label:'الاسم'},{id:'abbreviation',label:'الاختصار'}], {name:u.name,abbreviation:u.abbreviation||''}, function(v) { return apiCall('/definitions?type=unit','PUT',{type:'unit',id:u.id,...v}); }, function() { loadUnitsSection(); });
+      });
     });
-    html += '</tbody></table></div>'; 
-    container.innerHTML = html;
-    container.querySelectorAll('.edit-item-btn').forEach(function(b) { 
-      b.addEventListener('click', function(e) { 
-        showEditItemModal(e.target.closest('button').dataset.id); 
-      }); 
-    });
-    container.querySelectorAll('.delete-item-btn').forEach(function(b) { 
-      b.addEventListener('click', async function(e) { 
-        if (await confirmDialog('حذف المادة؟')) { 
+    document.querySelectorAll('.delete-unit-btn').forEach(function(b) {
+      b.addEventListener('click', async function(e) {
+        if (await confirmDialog('حذف الوحدة؟')) { 
           try {
-            await apiCall('/items?id=' + e.target.closest('button').dataset.id, 'DELETE'); 
+            await apiCall('/definitions?type=unit&id=' + e.target.closest('button').dataset.id,'DELETE'); 
             showToast('تم الحذف','success'); 
-            loadItems(); 
+            loadUnitsSection(); 
           } catch(err) {
             showToast('خطأ في الحذف', 'error');
           }
-        } 
-      }); 
+        }
+      });
     });
+  } catch(e) {
+    showToast('خطأ في تحميل الوحدات', 'error');
   }
-  
-  function showAddItemModal() {
-    var body = '<div class="form-group"><label class="form-label">اسم المادة</label><input class="input" id="fm-name"></div><div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" step="0.01" value="0"></div><div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" step="0.01" value="0"></div><div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-qty" type="number" step="any" value="0"></div>';
-    var modal = openModal({
-      title: 'إضافة مادة جديدة',
-      bodyHTML: body,
-      footerHTML: '<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">' + ICONS.plus + ' حفظ</button>'
-    });
-    modal.element.querySelector('#fm-cancel').onclick = function() { modal.close(); };
-    modal.element.querySelector('#fm-save').onclick = async function() {
-      try {
-        var name = sanitizeInput(modal.element.querySelector('#fm-name').value.trim());
-        if (!name) return showToast('اسم المادة مطلوب', 'warning');
-        await apiCall('/items', 'POST', {
-          name: name,
-          purchase_price: validateNumber(modal.element.querySelector('#fm-purchase').value),
-          selling_price: validateNumber(modal.element.querySelector('#fm-selling').value),
-          quantity: validateNumber(modal.element.querySelector('#fm-qty').value)
-        });
-        modal.close(); 
-        showToast('تم الحفظ بنجاح', 'success'); 
-        loadItems();
-      } catch(e) {
-        showToast('خطأ في الحفظ: ' + e.message, 'error');
-      }
-    };
-  }
-  
-  function showEditItemModal(id) {
-    var item = itemsCache.find(function(i) { return i.id == id; }); 
-    if (!item) return;
-    var body = '<div class="form-group"><label class="form-label">اسم المادة</label><input class="input" id="fm-name" value="' + sanitizeInput(item.name || '') + '"></div><div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" step="0.01" value="' + (item.purchase_price || 0) + '"></div><div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" step="0.01" value="' + (item.selling_price || 0) + '"></div><div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-qty" type="number" step="any" value="' + (item.quantity || 0) + '"></div>';
-    var modal = openModal({
-      title: 'تعديل المادة',
-      bodyHTML: body,
-      footerHTML: '<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">' + ICONS.edit + ' حفظ</button>'
-    });
-    modal.element.querySelector('#fm-cancel').onclick = function() { modal.close(); };
-    modal.element.querySelector('#fm-save').onclick = async function() {
-      try {
-        await apiCall('/items', 'PUT', {
-          id: id,
-          name: sanitizeInput(modal.element.querySelector('#fm-name').value.trim()),
-          purchase_price: validateNumber(modal.element.querySelector('#fm-purchase').value),
-          selling_price: validateNumber(modal.element.querySelector('#fm-selling').value),
-          quantity: validateNumber(modal.element.querySelector('#fm-qty').value)
-        });
-        modal.close(); 
-        showToast('تم التعديل بنجاح', 'success'); 
-        loadItems();
-      } catch(e) {
-        showToast('خطأ في التعديل: ' + e.message, 'error');
-      }
-    };
-  }
-  
-  // ===== Generic Sections =====
-  async function loadGenericSection(endpoint, cacheKey) {
+}
+
+function showAddUnitModal() {
+  showFormModal('إضافة وحدة قياس', [{id:'name',label:'اسم الوحدة'},{id:'abbreviation',label:'الاختصار'}], {}, function(v) { return apiCall('/definitions?type=unit','POST',{type:'unit',...v}); }, function() { loadUnitsSection(); });
+}
+
+// ===== Form Modal =====
+function showFormModal(title, fields, initialValues, onSave, onSuccess) {
+  var formId = 'frm-' + Date.now();
+  var body = '';
+  fields.forEach(function(f) {
+    var val = initialValues[f.id] !== undefined ? sanitizeInput(initialValues[f.id]) : '';
+    body += '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="input" id="' + formId + '-' + f.id + '" type="' + (f.type || 'text') + '" value="' + val + '"></div>';
+  });
+  var modal = openModal({
+    title: title,
+    bodyHTML: body,
+    footerHTML: '<button class="btn btn-secondary" id="' + formId + '-cancel">إلغاء</button><button class="btn btn-primary" id="' + formId + '-save">' + ICONS.plus + ' حفظ</button>'
+  });
+  modal.element.querySelector('#' + formId + '-cancel').onclick = function() { modal.close(); };
+  modal.element.querySelector('#' + formId + '-save').onclick = async function() {
     try {
-      var data = await apiCall(endpoint, 'GET');
-      if (cacheKey === 'customers') customersCache = data;
-      else if (cacheKey === 'suppliers') suppliersCache = data;
-      else if (cacheKey === 'categories') categoriesCache = data;
-      var titles = { customers: 'العملاء', suppliers: 'الموردين', categories: 'التصنيفات' };
-      var title = titles[cacheKey] || cacheKey;
-      var tc = document.getElementById('tab-content'); 
-      if (!tc) return;
-      var html = '<div class="card"><div class="card-header"><h3 class="card-title">' + title + '</h3><button class="btn btn-primary btn-sm add-btn" data-type="' + cacheKey + '">' + ICONS.plus + ' إضافة</button></div></div>';
-      if (!data.length) html += '<div class="empty-state"><h3>لا يوجد ' + title + '</h3></div>';
-      else data.forEach(function(item) {
-        html += '<div class="card card-hover" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:800;">' + sanitizeInput(item.name) + '</span><div style="display:flex;gap:6px;"><button class="btn btn-secondary btn-sm edit-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.trash + '</button></div></div>';
+      var values = {};
+      fields.forEach(function(f) {
+        var el = modal.element.querySelector('#' + formId + '-' + f.id);
+        values[f.id] = el ? sanitizeInput(el.value.trim()) : '';
       });
-      tc.innerHTML = html;
+      await onSave(values);
+      modal.close(); 
+      showToast('تم الحفظ','success');
+      if (onSuccess) onSuccess();
     } catch(e) {
-      showToast('خطأ في تحميل البيانات', 'error');
+      showToast('خطأ في الحفظ: ' + e.message, 'error');
     }
-  }
-  
-  // ===== Units =====
-  async function loadUnitsSection() {
-    try {
-      unitsCache = await apiCall('/definitions?type=unit','GET');
-      var tc = document.getElementById('tab-content'); 
-      if (!tc) return;
-      var html = '<div class="card"><div class="card-header"><h3 class="card-title">وحدات القياس</h3><button class="btn btn-primary btn-sm" id="btn-add-unit">' + ICONS.plus + ' إضافة</button></div></div>';
-      if (!unitsCache.length) html += '<div class="empty-state"><h3>لا توجد وحدات</h3></div>';
-      else {
-        html += '<div class="table-wrap"><table class="table"><thead><tr><th>الوحدة</th><th>الاختصار</th><th></th></tr></thead><tbody>';
-        unitsCache.forEach(function(u) {
-          html += '<tr><td>' + sanitizeInput(u.name) + '</td><td>' + (sanitizeInput(u.abbreviation) || '-') + '</td><td><button class="btn btn-secondary btn-sm edit-unit-btn" data-id="' + u.id + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-unit-btn" data-id="' + u.id + '">' + ICONS.trash + '</button></td></tr>';
-        });
-        html += '</tbody></table></div>';
-      }
-      tc.innerHTML = html;
-      var addBtn = document.getElementById('btn-add-unit'); 
-      if (addBtn) addBtn.addEventListener('click', showAddUnitModal);
-      document.querySelectorAll('.edit-unit-btn').forEach(function(b) {
-        b.addEventListener('click', function(e) {
-          var u = unitsCache.find(function(x) { return x.id == e.target.closest('button').dataset.id; });
-          if (u) showFormModal('تعديل وحدة', [{id:'name',label:'الاسم'},{id:'abbreviation',label:'الاختصار'}], {name:u.name,abbreviation:u.abbreviation||''}, function(v) { return apiCall('/definitions?type=unit','PUT',{type:'unit',id:u.id,...v}); }, function() { loadUnitsSection(); });
-        });
-      });
-      document.querySelectorAll('.delete-unit-btn').forEach(function(b) {
-        b.addEventListener('click', async function(e) {
-          if (await confirmDialog('حذف الوحدة؟')) { 
-            try {
-              await apiCall('/definitions?type=unit&id=' + e.target.closest('button').dataset.id,'DELETE'); 
-              showToast('تم الحذف','success'); 
-              loadUnitsSection(); 
-            } catch(err) {
-              showToast('خطأ في الحذف', 'error');
-            }
-          }
-        });
-      });
-    } catch(e) {
-      showToast('خطأ في تحميل الوحدات', 'error');
-    }
-  }
-  
-  function showAddUnitModal() {
-    showFormModal('إضافة وحدة قياس', [{id:'name',label:'اسم الوحدة'},{id:'abbreviation',label:'الاختصار'}], {}, function(v) { return apiCall('/definitions?type=unit','POST',{type:'unit',...v}); }, function() { loadUnitsSection(); });
-  }
-  
-  // ===== Form Modal =====
-  function showFormModal(title, fields, initialValues, onSave, onSuccess) {
-    var formId = 'frm-' + Date.now();
-    var body = '';
-    fields.forEach(function(f) {
-      var val = initialValues[f.id] !== undefined ? sanitizeInput(initialValues[f.id]) : '';
-      body += '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="input" id="' + formId + '-' + f.id + '" type="' + (f.type || 'text') + '" value="' + val + '"></div>';
-    });
-    var modal = openModal({
-      title: title,
-      bodyHTML: body,
-      footerHTML: '<button class="btn btn-secondary" id="' + formId + '-cancel">إلغاء</button><button class="btn btn-primary" id="' + formId + '-save">' + ICONS.plus + ' حفظ</button>'
-    });
-    modal.element.querySelector('#' + formId + '-cancel').onclick = function() { modal.close(); };
-    modal.element.querySelector('#' + formId + '-save').onclick = async function() {
-      try {
-        var values = {};
-        fields.forEach(function(f) {
-          var el = modal.element.querySelector('#' + formId + '-' + f.id);
-          values[f.id] = el ? sanitizeInput(el.value.trim()) : '';
-        });
-        await onSave(values);
-        modal.close(); 
-        showToast('تم الحفظ','success');
-        if (onSuccess) onSuccess();
-      } catch(e) {
-        showToast('خطأ في الحفظ: ' + e.message, 'error');
-      }
-    };
-  }
-  
+  };
+}
+
   // ===== Invoice Modal =====
   async function showInvoiceModal(type) {
     try {
