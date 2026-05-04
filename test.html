@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>اختبار</title></head>
+<body>
+  <h1>الصفحة تعمل</h1>
+  <div id="status">جاري تحميل المكتبات...</div>
+  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    setTimeout(function() {
+      var msg = '';
+      if (typeof Dexie === 'undefined') msg += 'Dexie لم تحمل. ';
+      else msg += 'Dexie OK. ';
+      if (typeof Chart === 'undefined') msg += 'Chart.js لم تحمل. ';
+      else msg += 'Chart.js OK. ';
+      document.getElementById('status').textContent = msg;
+    }, 2000);
+  </script>
+</body>
+</html>
