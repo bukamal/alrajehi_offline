@@ -13,15 +13,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
       - name: Setup Java JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -34,14 +34,14 @@ jobs:
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
 
-      - name: Clean old config files & create JSON config
+      - name: Clean old config & create capacitor.config.json with absolute webDir
         run: |
           rm -f capacitor.config.ts capacitor.config.js
-          cat > capacitor.config.json << 'EOF'
+          cat > capacitor.config.json << EOF
           {
             "appId": "com.alrajhi.accounting",
             "appName": "الراجحي للمحاسبة",
-            "webDir": ".",
+            "webDir": "$GITHUB_WORKSPACE",
             "server": {
               "androidScheme": "https",
               "cleartext": true
@@ -73,7 +73,7 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Upload Debug APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: alrajhi-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -84,7 +84,7 @@ jobs:
           ./gradlew assembleRelease
 
       - name: Upload Release APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: alrajhi-release-unsigned
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
