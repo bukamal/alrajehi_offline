@@ -384,6 +384,42 @@ function initNavigation() {
   });
 }
 
+// ===== Populate More Menu (المزيد) =====
+function initMoreMenu() {
+  var grid = document.getElementById('sheet-grid');
+  if (!grid) {
+    debugLog('[More] sheet-grid not found');
+    return;
+  }
+  var items = [
+    { id: 'customers', name: 'العملاء' },
+    { id: 'suppliers', name: 'الموردين' },
+    { id: 'categories', name: 'التصنيفات' },
+    { id: 'units', name: 'وحدات القياس' },
+    { id: 'payments', name: 'الدفعات' },
+    { id: 'expenses', name: 'المصاريف' },
+    { id: 'reports', name: 'التقارير' },
+    { id: 'purchase-invoice', name: 'فاتورة مشتريات' }
+  ];
+  grid.innerHTML = ''; // نظف المحتوى السابق
+  items.forEach(function(item) {
+    var btn = document.createElement('button');
+    btn.className = 'sheet-item';
+    btn.dataset.tab = item.id;
+    btn.textContent = item.name;
+    btn.addEventListener('click', function() {
+      var mm = document.getElementById('more-menu');
+      if (mm) {
+        mm.style.display = 'none';
+        unlockScroll();
+      }
+      navigateTo(item.id);
+    });
+    grid.appendChild(btn);
+  });
+  debugLog('[More] Menu populated with ' + items.length + ' items');
+}
+
 function setActiveTab(tabName) {
   document.querySelectorAll('.nav-item,.bottom-item').forEach(function(el) { 
     el.classList.toggle('active', el.dataset.tab === tabName); 
@@ -970,7 +1006,8 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     debugLog('[App] Starting initialization...');
     try {
       initNavigation();
-      debugLog('[App] Navigation built');
+      initMoreMenu();   // <--- أضف هذا السطر هنا لملء قائمة "المزيد"
+      debugLog('[App] Navigation & More Menu built');
       initEventListeners();
       debugLog('[App] Event listeners initialized');
       
