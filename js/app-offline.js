@@ -1,41 +1,20 @@
 (function() {
   'use strict';
 
-  // ===== سجل تتبع آمن (يتعامل مع غياب body) =====
-  var debugMessages = [];
+  // ===== سجل التتبع الصامت (console.log فقط) =====
   function debugLog(msg) {
-    // إذا body غير موجود، خزن الرسالة لاحقاً
-    if (!document.body) {
-      debugMessages.push(msg);
-      return;
-    }
-    // إنشاء الحاوية إن لم تكن موجودة
-    var el = document.getElementById('debug-log');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'debug-log';
-      el.style.cssText = 'position:fixed; bottom:80px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0); color:transparent; font-size:0; padding:0; z-index:-1;';
-      document.body.appendChild(el);
-      // إظهار الرسائل المخزنة
-      if (debugMessages.length) {
-        el.textContent = debugMessages.join('\n') + '\n';
-        debugMessages = [];
-        el.scrollTop = el.scrollHeight;
-      }
-    }
-    el.textContent += msg + '\n';
-    el.scrollTop = el.scrollHeight;
-    // إظهار أيضاً كـ toast لرؤية فورية
-    if (window.showToast) showToast(msg, 'info');
+    console.log(msg);
   }
 
   // ===== Global Error Handling =====
   window.addEventListener('error', function(e) {
-    debugLog('[Error] ' + e.message + ' at line ' + e.lineno);
+    console.error('[Error]', e.message, e.filename, e.lineno);
+    if (window.showToast) showToast('خطأ في التطبيق: ' + e.message, 'error');
   });
   
   window.addEventListener('unhandledrejection', function(e) {
-    debugLog('[Promise] ' + e.reason);
+    console.error('[Promise]', e.reason);
+    if (window.showToast) showToast('خطأ غير متوقع', 'error');
   });
 
   // ===== Input Sanitization =====
@@ -77,10 +56,12 @@
     } catch(e) {
       useMemoryFallback = true;
       debugLog('[DB] Dexie error: ' + e.message);
+      if (window.showToast) showToast('وضع الذاكرة المؤقتة: البيانات ستُفقد عند إغلاق التطبيق', 'warning');
     }
   } else {
     useMemoryFallback = true;
     debugLog('[DB] Dexie not found');
+    if (window.showToast) showToast('لم يتم تحميل قاعدة البيانات، البيانات ستكون مؤقتة', 'warning');
   }
 
   function getMemoryTable(name) {
@@ -158,6 +139,7 @@ function unlockScroll() {
   window.scrollTo(0, scrollLockPos);
 }
 
+// ===== API Layer =====
 async function apiCall(endpoint, method, body) {
   method = method || 'GET'; 
   body = body || {};
@@ -354,6 +336,7 @@ var ICONS = {
   trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
 };
 
+// ===== Navigation =====
 function initNavigation() {
   var nav = document.getElementById('sidebar-nav'); 
   if (!nav) return;
@@ -376,48 +359,9 @@ function initNavigation() {
     btn.className = 'nav-item' + (tab.id === 'dashboard' ? ' active' : '');
     btn.dataset.tab = tab.id; 
     btn.textContent = tab.name;
-    btn.onclick = function() {
-      showToast('🔘 القائمة الجانبية: ' + tab.name);
-      navigateTo(tab.id);
-    };
+    btn.onclick = function() { navigateTo(tab.id); };
     nav.appendChild(btn);
   });
-}
-
-// ===== Populate More Menu (المزيد) =====
-function initMoreMenu() {
-  var grid = document.getElementById('sheet-grid');
-  if (!grid) {
-    debugLog('[More] sheet-grid not found');
-    return;
-  }
-  var items = [
-    { id: 'customers', name: 'العملاء' },
-    { id: 'suppliers', name: 'الموردين' },
-    { id: 'categories', name: 'التصنيفات' },
-    { id: 'units', name: 'وحدات القياس' },
-    { id: 'payments', name: 'الدفعات' },
-    { id: 'expenses', name: 'المصاريف' },
-    { id: 'reports', name: 'التقارير' },
-    { id: 'purchase-invoice', name: 'فاتورة مشتريات' }
-  ];
-  grid.innerHTML = ''; // نظف المحتوى السابق
-  items.forEach(function(item) {
-    var btn = document.createElement('button');
-    btn.className = 'sheet-item';
-    btn.dataset.tab = item.id;
-    btn.textContent = item.name;
-    btn.addEventListener('click', function() {
-      var mm = document.getElementById('more-menu');
-      if (mm) {
-        mm.style.display = 'none';
-        unlockScroll();
-      }
-      navigateTo(item.id);
-    });
-    grid.appendChild(btn);
-  });
-  debugLog('[More] Menu populated with ' + items.length + ' items');
 }
 
 function setActiveTab(tabName) {
@@ -427,7 +371,6 @@ function setActiveTab(tabName) {
 }
 
 function navigateTo(tab) {
-  showToast('🔘 Navigating to: ' + tab);
   setActiveTab(tab);
   var moreMenu = document.getElementById('more-menu'); 
   if (moreMenu) moreMenu.style.display = 'none';
@@ -453,6 +396,7 @@ function navigateTo(tab) {
         case 'reports': loadReports(); break;
       }
     } catch (e) {
+      console.error(e);
       showToast('خطأ في التحميل', 'error');
     }
     content.style.transition = 'all 0.3s'; 
@@ -460,6 +404,7 @@ function navigateTo(tab) {
   }, 50);
 }
 
+// ===== Dashboard =====
 async function loadDashboard() {
   try {
     var invoices = await apiCall('/invoices','GET');
@@ -518,11 +463,13 @@ async function loadDashboard() {
     };
   } catch(e) {
     showToast('خطأ في تحميل لوحة التحكم', 'error');
+    console.error(e);
   }
 }
 
 var itemsCache = [], customersCache = [], suppliersCache = [], invoicesCache = [], categoriesCache = [], unitsCache = [];
 
+// ===== Items =====
 async function loadItems() {
   try {
     itemsCache = await apiCall('/items','GET');
@@ -618,6 +565,7 @@ function showEditItemModal(id) {
   };
 }
 
+// ===== Generic Sections =====
 async function loadGenericSection(endpoint, cacheKey) {
   try {
     var data = await apiCall(endpoint, 'GET');
@@ -637,6 +585,7 @@ async function loadGenericSection(endpoint, cacheKey) {
   } catch(e) { showToast('خطأ في تحميل البيانات', 'error'); }
 }
 
+// ===== Units =====
 async function loadUnitsSection() {
   try {
     unitsCache = await apiCall('/definitions?type=unit','GET');
@@ -897,19 +846,49 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     if (rpt) rpt.addEventListener('click', loadDashboard);
   }
   
-  // ===== Event Listeners (with debugLog tracking) =====
+  // ===== Populate More Menu =====
+  function initMoreMenu() {
+    var grid = document.getElementById('sheet-grid');
+    if (!grid) {
+      console.log('[More] sheet-grid not found');
+      return;
+    }
+    var items = [
+      { id: 'customers', name: 'العملاء' },
+      { id: 'suppliers', name: 'الموردين' },
+      { id: 'categories', name: 'التصنيفات' },
+      { id: 'units', name: 'وحدات القياس' },
+      { id: 'payments', name: 'الدفعات' },
+      { id: 'expenses', name: 'المصاريف' },
+      { id: 'reports', name: 'التقارير' },
+      { id: 'purchase-invoice', name: 'فاتورة مشتريات' }
+    ];
+    grid.innerHTML = '';
+    items.forEach(function(item) {
+      var btn = document.createElement('button');
+      btn.className = 'sheet-item';
+      btn.dataset.tab = item.id;
+      btn.textContent = item.name;
+      btn.addEventListener('click', function() {
+        var mm = document.getElementById('more-menu');
+        if (mm) {
+          mm.style.display = 'none';
+          unlockScroll();
+        }
+        navigateTo(item.id);
+      });
+      grid.appendChild(btn);
+    });
+  }
+  
+  // ===== Event Listeners (بدون إشعارات تتبع) =====
   function initEventListeners() {
-    debugLog('[Events] بدء ربط الأحداث...');
-
     var menuToggle = document.getElementById('menu-toggle'); 
     if (menuToggle) {
       menuToggle.addEventListener('click', function() { 
         var sb = document.getElementById('sidebar'); 
         if (sb) sb.classList.toggle('open'); 
       });
-      debugLog('[Events] menu-toggle bound');
-    } else {
-      debugLog('[Events] menu-toggle NOT FOUND');
     }
 
     var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
@@ -918,17 +897,11 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
         var mm = document.getElementById('more-menu'); 
         if (mm) { mm.style.display = 'none'; unlockScroll(); } 
       });
-      debugLog('[Events] sheet-backdrop bound');
-    } else {
-      debugLog('[Events] sheet-backdrop NOT FOUND');
     }
 
-    var bottomItems = document.querySelectorAll('.bottom-item');
-    debugLog('[Events] Found ' + bottomItems.length + ' bottom items');
-    bottomItems.forEach(function(btn) {
+    document.querySelectorAll('.bottom-item').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var tab = btn.dataset.tab;
-        debugLog('[Events] Bottom nav clicked: ' + tab);
         if (tab === 'more') { 
           var mm = document.getElementById('more-menu'); 
           if (mm) { mm.style.display = 'flex'; lockScroll(); } 
@@ -942,31 +915,24 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       helpBtn.addEventListener('click', function() { 
         openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
       });
-      debugLog('[Events] help button bound');
     }
-
-    debugLog('[Events] المستمعات جاهزة');
   }
 
-  // ===== Global Click Handler (احتياطي شامل) =====
+  // ===== Global Click Handler (احتياطي) =====
   document.addEventListener('click', async function(e) {
-    // معالجة أي عنصر يحمل data-tab (سواءً زر التنقل السفلي أو غير ذلك)
     var target = e.target.closest('[data-tab]');
     if (target) {
       var tab = target.dataset.tab;
       if (tab === 'more') {
-        // فتح قائمة "المزيد"
         var mm = document.getElementById('more-menu'); 
         if (mm) { mm.style.display = 'flex'; lockScroll(); }
         return;
       } else if (tab) {
-        showToast('🔄 تنقل احتياطي: ' + tab);
         navigateTo(tab);
         return;
       }
     }
 
-    // باقي الأزرار (add, edit, delete)
     var t = e.target.closest('button'); 
     if (!t) return;
     if (t.classList.contains('add-btn')) {
@@ -1001,15 +967,12 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     }
   });
 
-  // ===== App Initialization (with debugLog) =====
+  // ===== App Initialization =====
   async function initApp() {
-    debugLog('[App] Starting initialization...');
     try {
       initNavigation();
-      initMoreMenu();   // <--- أضف هذا السطر هنا لملء قائمة "المزيد"
-      debugLog('[App] Navigation & More Menu built');
+      initMoreMenu();
       initEventListeners();
-      debugLog('[App] Event listeners initialized');
       
       var results = await Promise.all([
         apiCall('/items','GET'), 
@@ -1025,24 +988,18 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       invoicesCache = results[3]; 
       categoriesCache = results[4]; 
       unitsCache = results[5];
-      debugLog('[App] Data loaded successfully');
     } catch (e) { 
-      debugLog('[App] Init error: ' + e.message);
-      if (window.showToast) showToast('خطأ في تهيئة التطبيق', 'error');
+      console.error(e);
+      showToast('خطأ في تهيئة التطبيق', 'error');
     }
     loadDashboard();
     var loader = document.getElementById('loading-screen'); 
-    if (loader) {
-      loader.classList.add('hidden');
-      debugLog('[App] Loading screen hidden');
-    }
-    debugLog('[App] Ready - Dashboard loaded');
+    if (loader) loader.classList.add('hidden');
   }
 
   initApp().catch(function(err) {
-    debugLog('[App] Fatal error: ' + err.message);
     var loader = document.getElementById('loading-screen'); 
     if (loader) loader.classList.add('hidden');
-    if (window.showToast) showToast('خطأ: ' + err.message, 'error');
+    showToast('خطأ: ' + err.message, 'error');
   });
 })();
