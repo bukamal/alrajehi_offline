@@ -1,14 +1,19 @@
 (function() {
   'use strict';
 
-  // ===== سجل التتبع المرئي =====
+  // ===== سجل التتبع المرئي (ينشئ الحاوية تلقائياً) =====
   function debugLog(msg) {
+    // إنشاء الحاوية إن لم تكن موجودة
     var el = document.getElementById('debug-log');
-    if (el) {
-      el.textContent += msg + '\n';
-      el.scrollTop = el.scrollHeight;
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'debug-log';
+      el.style.cssText = 'position:fixed; bottom:80px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace;';
+      document.body.appendChild(el);
     }
-    // احتياطي: showToast أيضاً
+    el.textContent += msg + '\n';
+    el.scrollTop = el.scrollHeight;
+    // إظهار أيضاً كـ toast لرؤية فورية
     if (window.showToast) showToast(msg, 'info');
   }
 
