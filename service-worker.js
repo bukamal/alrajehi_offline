@@ -9,6 +9,8 @@ const urlsToCache = [
   BASE_PATH + 'icons/icon-192.png',
   BASE_PATH + 'icons/icon-512.png',
   BASE_PATH + 'app.js',
+  BASE_PATH + 'js/dexie.min.js',
+  BASE_PATH + 'js/chart.umd.min.js',
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
   'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'
