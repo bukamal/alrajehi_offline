@@ -860,70 +860,76 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     var rpt = document.getElementById('report-summary'); 
     if (rpt) rpt.addEventListener('click', loadDashboard);
   }
+  
+  // ===== Event Listeners (with debugLog tracking) =====
+  function initEventListeners() {
+    debugLog('[Events] بدء ربط الأحداث...');
 
-// ===== Event Listeners (with debugLog tracking) =====
-function initEventListeners() {
-  debugLog('[Events] بدء ربط الأحداث...');
+    var menuToggle = document.getElementById('menu-toggle'); 
+    if (menuToggle) {
+      menuToggle.addEventListener('click', function() { 
+        var sb = document.getElementById('sidebar'); 
+        if (sb) sb.classList.toggle('open'); 
+      });
+      debugLog('[Events] menu-toggle bound');
+    } else {
+      debugLog('[Events] menu-toggle NOT FOUND');
+    }
 
-  var menuToggle = document.getElementById('menu-toggle'); 
-  if (menuToggle) {
-    menuToggle.addEventListener('click', function() { 
-      var sb = document.getElementById('sidebar'); 
-      if (sb) sb.classList.toggle('open'); 
-    });
-    debugLog('[Events] menu-toggle bound');
-  } else {
-    debugLog('[Events] menu-toggle NOT FOUND');
-  }
-
-  var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
-  if (sheetBackdrop) {
-    sheetBackdrop.addEventListener('click', function() { 
-      var mm = document.getElementById('more-menu'); 
-      if (mm) { mm.style.display = 'none'; unlockScroll(); } 
-    });
-    debugLog('[Events] sheet-backdrop bound');
-  } else {
-    debugLog('[Events] sheet-backdrop NOT FOUND');
-  }
-
-  var bottomItems = document.querySelectorAll('.bottom-item');
-  debugLog('[Events] Found ' + bottomItems.length + ' bottom items');
-  bottomItems.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var tab = btn.dataset.tab;
-      debugLog('[Events] Bottom nav clicked: ' + tab);
-      if (tab === 'more') { 
+    var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
+    if (sheetBackdrop) {
+      sheetBackdrop.addEventListener('click', function() { 
         var mm = document.getElementById('more-menu'); 
-        if (mm) { mm.style.display = 'flex'; lockScroll(); } 
-      }
-      else if (tab) navigateTo(tab);
-    });
-  });
+        if (mm) { mm.style.display = 'none'; unlockScroll(); } 
+      });
+      debugLog('[Events] sheet-backdrop bound');
+    } else {
+      debugLog('[Events] sheet-backdrop NOT FOUND');
+    }
 
-  var helpBtn = document.getElementById('btn-help'); 
-  if (helpBtn) {
-    helpBtn.addEventListener('click', function() { 
-      openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
+    var bottomItems = document.querySelectorAll('.bottom-item');
+    debugLog('[Events] Found ' + bottomItems.length + ' bottom items');
+    bottomItems.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var tab = btn.dataset.tab;
+        debugLog('[Events] Bottom nav clicked: ' + tab);
+        if (tab === 'more') { 
+          var mm = document.getElementById('more-menu'); 
+          if (mm) { mm.style.display = 'flex'; lockScroll(); } 
+        }
+        else if (tab) navigateTo(tab);
+      });
     });
-    debugLog('[Events] help button bound');
+
+    var helpBtn = document.getElementById('btn-help'); 
+    if (helpBtn) {
+      helpBtn.addEventListener('click', function() { 
+        openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
+      });
+      debugLog('[Events] help button bound');
+    }
+
+    debugLog('[Events] المستمعات جاهزة');
   }
 
-  debugLog('[Events] المستمعات جاهزة');
-}
-  // ===== Global Click Handler (احتياطي لأزرار التنقل) =====
+  // ===== Global Click Handler (احتياطي شامل) =====
   document.addEventListener('click', async function(e) {
-    // مستمع احتياطي لأي عنصر يحمل data-tab
+    // معالجة أي عنصر يحمل data-tab (سواءً زر التنقل السفلي أو غير ذلك)
     var target = e.target.closest('[data-tab]');
     if (target) {
       var tab = target.dataset.tab;
-      if (tab && tab !== 'more') {
+      if (tab === 'more') {
+        // فتح قائمة "المزيد"
+        var mm = document.getElementById('more-menu'); 
+        if (mm) { mm.style.display = 'flex'; lockScroll(); }
+        return;
+      } else if (tab) {
         showToast('🔄 تنقل احتياطي: ' + tab);
         navigateTo(tab);
         return;
       }
     }
-    
+
     // باقي الأزرار (add, edit, delete)
     var t = e.target.closest('button'); 
     if (!t) return;
