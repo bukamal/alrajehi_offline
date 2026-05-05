@@ -641,6 +641,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
   };
 }
 
+  // ===== Invoice Modal =====
   async function showInvoiceModal(type) {
     try {
       customersCache = await apiCall('/customers','GET');
@@ -721,6 +722,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     }
   }
   
+  // ===== Invoices =====
   async function loadInvoices() {
     try {
       invoicesCache = await apiCall('/invoices','GET');
@@ -754,6 +756,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     container.innerHTML = html;
   }
   
+  // ===== Payments =====
   async function loadPayments() {
     try {
       var payments = await apiCall('/payments','GET');
@@ -797,6 +800,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     };
   }
   
+  // ===== Expenses =====
   async function loadExpenses() {
     try {
       var expenses = await apiCall('/expenses','GET');
@@ -819,6 +823,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     } catch(e) { showToast('خطأ في تحميل المصاريف', 'error'); }
   }
   
+  // ===== Reports =====
   function loadReports() {
     var tc = document.getElementById('tab-content'); 
     if (!tc) return;
@@ -827,17 +832,22 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     if (rpt) rpt.addEventListener('click', loadDashboard);
   }
   
+  // ===== Event Listeners (with tracking) =====
   function initEventListeners() {
+    showToast('بدء ربط الأحداث...');
+    
     var menuToggle = document.getElementById('menu-toggle'); 
     if (menuToggle) menuToggle.addEventListener('click', function() { 
       var sb = document.getElementById('sidebar'); 
       if (sb) sb.classList.toggle('open'); 
     });
+    
     var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
     if (sheetBackdrop) sheetBackdrop.addEventListener('click', function() { 
       var mm = document.getElementById('more-menu'); 
       if (mm) { mm.style.display = 'none'; unlockScroll(); } 
     });
+    
     document.querySelectorAll('.bottom-item').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var tab = btn.dataset.tab;
@@ -849,14 +859,30 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
         else if (tab) navigateTo(tab);
       });
     });
+    showToast('تم ربط الأزرار السفلية');
+    
     var helpBtn = document.getElementById('btn-help'); 
     if (helpBtn) helpBtn.addEventListener('click', function() { 
       openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
     });
+    
     showToast('✅ المستمعات جاهزة');
   }
   
+  // ===== Global Click Handler (احتياطي لأزرار التنقل) =====
   document.addEventListener('click', async function(e) {
+    // مستمع احتياطي لأي عنصر يحمل data-tab
+    var target = e.target.closest('[data-tab]');
+    if (target) {
+      var tab = target.dataset.tab;
+      if (tab && tab !== 'more') {
+        showToast('🔄 تنقل احتياطي: ' + tab);
+        navigateTo(tab);
+        return;
+      }
+    }
+    
+    // باقي الأزرار (add, edit, delete)
     var t = e.target.closest('button'); 
     if (!t) return;
     if (t.classList.contains('add-btn')) {
@@ -891,6 +917,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     }
   });
   
+  // ===== App Initialization =====
   async function initApp() {
     try {
       initNavigation();
