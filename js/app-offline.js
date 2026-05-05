@@ -28,6 +28,16 @@
     search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
   };
 
+  
+    function debugLog(msg) {
+    console.log(msg);
+    var el = document.getElementById('debug-log');
+    if (el) {
+        el.style.display = 'block';
+        el.textContent += msg + '\n';
+        el.scrollTop = el.scrollHeight;
+    }
+}
   // ===== دوال مساعدة =====
   function formatNumber(num) {
     return Number(num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
