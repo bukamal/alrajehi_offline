@@ -1,12 +1,10 @@
 (function() {
   'use strict';
 
-  // ===== الأيقونات =====
   const ICONS = {
     home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
     box: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
     cart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
-    download: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
     users: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
     factory: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 22h20"/><path d="M4 22V10l4-2v14"/><path d="M12 22V8l4-2v16"/><path d="M20 22V4l-4 2v16"/></svg>',
     tag: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
@@ -28,7 +26,6 @@
     send: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
   };
 
-  // ===== دوال مساعدة =====
   function formatNumber(num) { return Number(num||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function formatDate(d) { return d ? new Date(d).toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'}) : '-'; }
   function debounce(fn, ms=300) { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
@@ -55,7 +52,6 @@
   }
   function confirmDialog(msg){ return new Promise(resolve=>{ const m=openModal({title:'تأكيد',bodyHTML:`<p>${msg}</p>`,footerHTML:'<button class="btn btn-secondary" id="cf-cancel">إلغاء</button><button class="btn btn-danger" id="cf-ok">تأكيد</button>',onClose:()=>resolve(false)}); m.element.querySelector('#cf-cancel').onclick=()=>{m.close();resolve(false);}; m.element.querySelector('#cf-ok').onclick=()=>{m.close();resolve(true);}; }); }
 
-  // ===== قاعدة البيانات =====
   const useMemory = typeof Dexie === 'undefined' || !Dexie;
   let db;
   if(!useMemory){
@@ -115,7 +111,24 @@
       }
     } else if(method==='POST'){
       if(table==='/items'){ const clean={...body}; clean.purchase_price=parseFloat(clean.purchase_price)||0; clean.selling_price=parseFloat(clean.selling_price)||0; clean.quantity=parseFloat(clean.quantity)||0; const nid=await getTable('items').add(clean); return {id:nid,...clean}; }
-      else if(table==='/invoices'){ const lines=body.lines; delete body.lines; const invId=await getTable('invoices').add(body); if(lines) for(const l of lines) await getTable('invoiceLines').add({...l,invoice_id:invId}); return {id:invId,...body}; }
+      else if(table==='/invoices'){
+        const lines=body.lines; delete body.lines;
+        const paid_amount = parseFloat(body.paid_amount) || 0; delete body.paid_amount;
+        const invId=await getTable('invoices').add(body);
+        if(lines) for(const l of lines) await getTable('invoiceLines').add({...l,invoice_id:invId});
+        // إنشاء دفعة تلقائية للمبلغ المدفوع
+        if(paid_amount > 0){
+          await getTable('payments').add({
+            invoice_id: invId,
+            customer_id: body.customer_id || null,
+            supplier_id: body.supplier_id || null,
+            amount: paid_amount,
+            payment_date: body.date,
+            notes: 'دفعة تلقائية'
+          });
+        }
+        return {id:invId,...body};
+      }
       else if(table==='/customers'){ const nid=await getTable('customers').add(body); return {id:nid,...body}; }
       else if(table==='/suppliers'){ const nid=await getTable('suppliers').add(body); return {id:nid,...body}; }
       else if(table==='/definitions'){
@@ -171,15 +184,47 @@ function renderFilteredItems(){
   const filtered=itemsCache.filter(i=>(i.name||'').toLowerCase().includes(q));
   const container=document.getElementById('items-list');
   if(!filtered.length) return container.innerHTML='<div class="empty-state"><h3>لا توجد مواد</h3></div>';
-  let html='<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th><th></th></tr></thead><tbody>';
+  let html='<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
   filtered.forEach(item=>{
     const baseUnit=unitsCache.find(u=>u.id==item.base_unit_id)||{};
-    html+=`<tr><td style="font-weight:700;">${item.name}</td><td>${baseUnit.name||'قطعة'}</td><td>${item.quantity||0}</td><td><button class="btn btn-secondary btn-sm edit-item-btn" data-id="${item.id}">${ICONS.edit}</button> <button class="btn btn-danger btn-sm delete-item-btn" data-id="${item.id}">${ICONS.trash}</button></td></tr>`;
+    html+=`<tr onclick="showItemDetail(${item.id})" style="cursor:pointer;"><td style="font-weight:700;">${item.name}</td><td>${baseUnit.name||'قطعة'}</td><td>${item.quantity||0}</td></tr>`;
   });
   html+='</tbody></table></div>'; container.innerHTML=html;
-  container.querySelectorAll('.edit-item-btn').forEach(b=>b.addEventListener('click',e=>showEditItemModal(e.target.closest('button').dataset.id)));
-  container.querySelectorAll('.delete-item-btn').forEach(b=>b.addEventListener('click',async e=>{ if(await confirmDialog('حذف المادة؟')){ await apiCall('/items?id='+b.dataset.id,'DELETE'); loadItems(); } }));
 }
+
+// تفاصيل المادة
+window.showItemDetail = function(itemId){
+  const item = itemsCache.find(i=>i.id===itemId);
+  if(!item) return;
+  const baseUnit = unitsCache.find(u=>u.id==item.base_unit_id) || {};
+  const baseName = baseUnit.name || 'قطعة';
+  let unitsHtml = '';
+  if(item.item_units && item.item_units.length){
+    unitsHtml = '<div style="margin-bottom:12px;"><strong>الوحدات الفرعية:</strong><ul>';
+    item.item_units.forEach(iu=>{
+      const unit = unitsCache.find(u=>u.id==iu.unit_id) || {};
+      unitsHtml += `<li>${unit.name||'وحدة'} (1 = ${iu.conversion_factor} ${baseName})</li>`;
+    });
+    unitsHtml += '</ul></div>';
+  }
+  const modal = openModal({
+    title: item.name,
+    bodyHTML: `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><strong>التصنيف:</strong> ${item.category_id ? (categoriesCache.find(c=>c.id==item.category_id)?.name||'-') : 'بدون تصنيف'}</div>
+        <div><strong>نوع المادة:</strong> ${item.item_type||'مخزون'}</div>
+        <div><strong>الوحدة الأساسية:</strong> ${baseName}</div>
+        <div><strong>الكمية:</strong> ${item.quantity||0}</div>
+        <div><strong>سعر الشراء:</strong> ${formatNumber(item.purchase_price)}</div>
+        <div><strong>سعر البيع:</strong> ${formatNumber(item.selling_price)}</div>
+      </div>
+      ${unitsHtml}
+    `,
+    footerHTML: `<button class="btn btn-secondary" id="edit-item-btn">${ICONS.edit} تعديل</button><button class="btn btn-danger" id="delete-item-btn">${ICONS.trash} حذف</button>`
+  });
+  modal.element.querySelector('#edit-item-btn').onclick = () => { modal.close(); setTimeout(()=>showEditItemModal(itemId), 200); };
+  modal.element.querySelector('#delete-item-btn').onclick = () => { modal.close(); setTimeout(async ()=>{ if(await confirmDialog('حذف المادة؟')){ await apiCall('/items?id='+itemId,'DELETE'); loadItems(); } }, 200); };
+};
 
 async function getOrCreateUnit(name){ if(!name) return null; let u=unitsCache.find(x=>x.name.toLowerCase()===name.toLowerCase()); if(u) return u.id; const res=await apiCall('/definitions?type=unit','POST',{name,abbreviation:name}); u={id:res.id,name,abbreviation:name}; unitsCache.push(u); return u.id; }
 
@@ -223,7 +268,6 @@ function showAddItemModal(){
   modal.element.querySelector('#fm-unit2-factor').addEventListener('input',updateQty);
   modal.element.querySelector('#fm-unit3-factor').addEventListener('input',updateQty);
 
-  // إضافة تصنيف سريع
   modal.element.querySelector('#btn-quick-cat').onclick=()=>{
     const row=modal.element.querySelector('#quick-cat-row');
     row.style.display=row.style.display==='none'?'block':'none';
@@ -294,7 +338,7 @@ function showEditItemModal(id){
   };
 }
 
-// ===== أقسام عامة =====
+// ===== أقسام عامة (عملاء، موردين، تصنيفات) =====
 async function loadGenericSection(endpoint,cacheKey){
   const data=await apiCall(endpoint,'GET');
   if(cacheKey==='customers') customersCache=data; else if(cacheKey==='suppliers') suppliersCache=data; else if(cacheKey==='categories') categoriesCache=data;
@@ -319,7 +363,46 @@ function showFormModal({title,fields,initialValues={},onSave,onSuccess}){
   };
 }
 
-// ===== فاتورة (بيع / شراء) مع حقل المدفوع =====
+// مستمع نقر عالمي لأزرار الإضافة/التعديل/الحذف في الأقسام العامة
+document.addEventListener('click', async e => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  // تجنب التعارض مع أزرار أخرى (add/edit/delete)
+  if (t.classList.contains('add-btn')) {
+    const type = t.dataset.type;
+    const titles = { customers: 'عميل', suppliers: 'مورد', categories: 'تصنيف' };
+    const endpoints = { customers: '/customers', suppliers: '/suppliers', categories: '/definitions?type=category' };
+    showFormModal({
+      title: `إضافة ${titles[type]}`,
+      fields: [{ id: 'name', label: 'الاسم' }],
+      onSave: async v => apiCall(endpoints[type], 'POST', type === 'categories' ? { type: 'category', name: v.name } : { name: v.name }),
+      onSuccess: () => loadGenericSection(endpoints[type], type)
+    });
+  } else if (t.classList.contains('edit-btn')) {
+    const type = t.dataset.type;
+    const caches = { customers: customersCache, suppliers: suppliersCache, categories: categoriesCache };
+    const item = caches[type]?.find(x => x.id == t.dataset.id);
+    if (!item) return;
+    const endpoints = { customers: '/customers', suppliers: '/suppliers', categories: '/definitions?type=category' };
+    showFormModal({
+      title: 'تعديل', fields: [{ id: 'name', label: 'الاسم' }],
+      initialValues: { name: item.name },
+      onSave: async v => apiCall(endpoints[type], 'PUT', type === 'categories' ? { type: 'category', id: item.id, name: v.name } : { id: item.id, name: v.name }),
+      onSuccess: () => loadGenericSection(endpoints[type], type)
+    });
+  } else if (t.classList.contains('delete-btn')) {
+    const type = t.dataset.type;
+    const caches = { customers: customersCache, suppliers: suppliersCache, categories: categoriesCache };
+    const item = caches[type]?.find(x => x.id == t.dataset.id);
+    if (!item || !(await confirmDialog(`حذف ${item.name}؟`))) return;
+    const delUrls = { customers: `/customers?id=${item.id}`, suppliers: `/suppliers?id=${item.id}`, categories: `/definitions?type=category&id=${item.id}` };
+    await apiCall(delUrls[type], 'DELETE');
+    showToast('تم الحذف', 'success');
+    loadGenericSection(delUrls[type].split('?')[0], type);
+  }
+});
+
+// ===== فاتورة (بيع / شراء) مع حقل المدفوع وتسجيل دفعة تلقائية =====
 async function showInvoiceModal(type){
   try{
     customersCache=await apiCall('/customers','GET');
@@ -387,6 +470,7 @@ async function showInvoiceModal(type){
       const entity=container.querySelector('#inv-entity').value;
       const paid=parseFloat(container.querySelector('#inv-paid').value)||0;
       const btn=container.querySelector('#inv-save'); btn.disabled=true; btn.innerHTML='⏳ جاري الحفظ...';
+      // apiCall سيقوم تلقائياً بتسجيل دفعة للمبلغ المدفوع كما في الجزء الأول
       await apiCall('/invoices','POST',{
         type, customer_id:type==='sale'&&entity!=='cash'?entity:null, supplier_id:type==='purchase'&&entity!=='cash'?entity:null,
         date:container.querySelector('#inv-date').value, reference:container.querySelector('#inv-ref').value.trim(),
@@ -396,7 +480,6 @@ async function showInvoiceModal(type){
     };
   }catch(e){ showToast('خطأ في فتح الفاتورة: '+e.message,'error'); }
 }
-
 // ===== قائمة الفواتير =====
 async function loadInvoices(){
   invoicesCache=await apiCall('/invoices','GET');
