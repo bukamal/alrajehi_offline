@@ -1,0 +1,6 @@
+{
+  "appId": "com.alrajhi.accounting",
+  "appName": "الراجحي للمحاسبة",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
