@@ -61,28 +61,28 @@
     document.getElementById('error-details').textContent = 'تعذر تهيئة قاعدة البيانات. تأكد من اتصال الانترنت ثم أعد تحميل الصفحة.';
     throw new Error('Dexie not available');
   }
-  const db = new Dexie('AlrajhiDBv3');
-  db.version(1).stores({
+  const db = new Dexie('AlrajhiDBv4');
+  db.version(4).stores({
     items: '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id, item_units',
     customers: '++id, name, phone, address, balance',
     suppliers: '++id, name, phone, address, balance',
     categories: '++id, name',
     units: '++id, name, abbreviation',
     invoices: '++id, type, customer_id, supplier_id, date, reference, notes, total',
-    invoiceLines: '++id, invoice_id, item_id, unit_id, quantity, unit_price, total, description',
+    invoiceLines: '++id, invoice_id, item_id, unit_id, quantity, unit_price, conversion_factor, total, description',
     payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date, notes',
     expenses: '++id, amount, expense_date, description'
   });
 
-  function getTable(name){
-    return db[name];
-  }
+  function getTable(name){ return db[name]; }
 
+  // ======== apiCall المعدلة لدعم الحقول الجديدة ========
   async function apiCall(endpoint, method='GET', body={}){
     const [table, query] = endpoint.split('?');
     const params = new URLSearchParams(query||'');
     const id = params.get('id') ? parseInt(params.get('id')) : null;
     const type = params.get('type');
+
     if(method==='GET'){
       switch(table){
         case '/items': return await getTable('items').toArray();
@@ -94,7 +94,9 @@
           for(const inv of invs){
             const lines = await getTable('invoiceLines').where({invoice_id:inv.id}).toArray();
             const pmts = await getTable('payments').where({invoice_id:inv.id}).toArray();
-            inv.invoice_lines=lines; inv.paid=pmts.reduce((s,p)=>s+p.amount,0); inv.balance=inv.total-inv.paid;
+            inv.invoice_lines = lines;
+            inv.paid = pmts.reduce((s,p)=>s+p.amount,0);
+            inv.balance = inv.total - inv.paid;
           }
           return invs;
         }
@@ -103,12 +105,27 @@
         default: return [];
       }
     } else if(method==='POST'){
-      if(table==='/items'){ const clean={...body}; clean.purchase_price=parseFloat(clean.purchase_price)||0; clean.selling_price=parseFloat(clean.selling_price)||0; clean.quantity=parseFloat(clean.quantity)||0; const nid=await getTable('items').add(clean); return {id:nid,...clean}; }
-      else if(table==='/invoices'){
-        const lines=body.lines; delete body.lines;
+      if(table==='/items'){
+        const clean = { ...body };
+        clean.purchase_price = parseFloat(clean.purchase_price)||0;
+        clean.selling_price = parseFloat(clean.selling_price)||0;
+        clean.quantity = parseFloat(clean.quantity)||0;
+        const nid = await getTable('items').add(clean);
+        return { id:nid, ...clean };
+      } else if(table==='/invoices'){
+        const invLines = body.lines; delete body.lines;
         const paid_amount = parseFloat(body.paid_amount) || 0; delete body.paid_amount;
-        const invId=await getTable('invoices').add(body);
-        if(lines) for(const l of lines) await getTable('invoiceLines').add({...l,invoice_id:invId});
+        const invId = await getTable('invoices').add(body);
+        if(invLines){
+          for(const l of invLines){
+            await getTable('invoiceLines').add({
+              ...l,
+              invoice_id: invId,
+              unit_price: l.unit_price || 0,
+              conversion_factor: l.conversion_factor || 1
+            });
+          }
+        }
         if(paid_amount > 0){
           await getTable('payments').add({
             invoice_id: invId,
@@ -119,20 +136,38 @@
             notes: 'دفعة تلقائية'
           });
         }
-        return {id:invId,...body};
+        return { id:invId, ...body };
+      } else if(table==='/customers'){
+        const nid = await getTable('customers').add(body);
+        return { id:nid, ...body };
+      } else if(table==='/suppliers'){
+        const nid = await getTable('suppliers').add(body);
+        return { id:nid, ...body };
+      } else if(table==='/definitions'){
+        if(type==='category'){
+          const nid = await getTable('categories').add({ name:body.name });
+          return { id:nid, ...body };
+        } else if(type==='unit'){
+          const unit = { name:body.name, abbreviation:body.abbreviation||body.name };
+          const nid = await getTable('units').add(unit);
+          unitsCache.push({ id:nid, ...unit });
+          return { id:nid, ...unit };
+        }
+      } else if(table==='/payments'){
+        const nid = await getTable('payments').add(body);
+        return { id:nid, ...body };
+      } else if(table==='/expenses'){
+        const nid = await getTable('expenses').add(body);
+        return { id:nid, ...body };
       }
-      else if(table==='/customers'){ const nid=await getTable('customers').add(body); return {id:nid,...body}; }
-      else if(table==='/suppliers'){ const nid=await getTable('suppliers').add(body); return {id:nid,...body}; }
-      else if(table==='/definitions'){
-        if(type==='category'){ const nid=await getTable('categories').add({name:body.name}); return {id:nid,...body}; }
-        else if(type==='unit'){ const u={name:body.name, abbreviation:body.abbreviation||body.name}; const nid=await getTable('units').add(u); unitsCache.push({id:nid,...u}); return {id:nid,...u}; }
-      }
-      else if(table==='/payments'){ const nid=await getTable('payments').add(body); return {id:nid,...body}; }
-      else if(table==='/expenses'){ const nid=await getTable('expenses').add(body); return {id:nid,...body}; }
     } else if(method==='DELETE'){
       const tbl = table.split('?')[0].replace('/','');
-      if(tbl==='invoices') await getTable('invoiceLines').where({invoice_id:id}).delete();
-      await getTable(tbl).delete(id); return {success:true};
+      if(tbl === 'invoices'){
+        await getTable('invoiceLines').where({invoice_id:id}).delete();
+        await getTable('payments').where({invoice_id:id}).delete();
+      }
+      await getTable(tbl).delete(id);
+      return { success:true };
     } else if(method==='PUT'){
       let tbl = table.replace('/','');
       let recordId = id;
@@ -143,9 +178,13 @@
       if (tbl === 'definitions') {
         const defType = type || changes.type;
         delete changes.type;
-        if (defType === 'category') await getTable('categories').update(recordId, changes);
-        else if (defType === 'unit') await getTable('units').update(recordId, changes);
-        else throw new Error('نوع التعريف غير معروف');
+        if (defType === 'category') {
+          await getTable('categories').update(recordId, changes);
+        } else if (defType === 'unit') {
+          await getTable('units').update(recordId, changes);
+        } else {
+          throw new Error('نوع التعريف غير معروف');
+        }
       } else {
         await getTable(tbl).update(recordId, changes);
       }
@@ -388,7 +427,7 @@ function showEditItemModal(id) {
     <div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-quantity" type="number" value="${item.quantity || 0}"></div>
     <div class="form-group"><label class="form-label">سعر الشراء (للوحدة الأساسية)</label><input class="input" id="fm-purchase" type="number" value="${item.purchase_price || 0}"></div>
     <div class="form-group"><label class="form-label">سعر البيع (للوحدة الأساسية)</label><input class="input" id="fm-selling" type="number" value="${item.selling_price || 0}"></div>`;
-  const modal = openModal({ title: 'تعد��ل مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
+  const modal = openModal({ title: 'تعديل مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
 
   modal.element.querySelector('#fm-cancel').onclick = () => modal.close();
   modal.element.querySelector('#fm-save').onclick = async () => {
@@ -518,7 +557,7 @@ document.addEventListener('click', async e => {
   }
 });
 
-// ===== فاتورة (بيع / شراء) مع معالجة الوحدات الصحيحة =====
+// ===== فاتورة (بيع / شراء) – الحسابات كما في المرجع v4 Pro =====
 async function showInvoiceModal(type) {
   try {
     customersCache = await apiCall('/customers', 'GET');
@@ -534,165 +573,218 @@ async function showInvoiceModal(type) {
       <input type="hidden" id="inv-type" value="${type}">
       <div class="invoice-lines" id="inv-lines">
         <div class="line-row">
-          <div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
+          <div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}" data-price="${type === 'sale' ? i.selling_price : i.purchase_price}">${i.name}</option>`).join('')}</select></div>
           <div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>
-          <div class="form-group" style="position:relative;">
-            <input type="number" step="any" class="input qty-input" placeholder="الكمية">
-            <span class="qty-hint" style="display:none; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-muted); background:var(--bg); padding:2px 8px; border-radius:6px;"></span>
-          </div>
-          <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="سعر الوحدة الأساسية"></div>
+          <div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>
+          <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>
           <div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>
         </div>
       </div>
-      <button class="btn btn-secondary btn-sm" id="btn-add-line">${ICONS.plus} إضافة بند</button>
+      <button class="btn btn-secondary btn-sm" id="btn-add-line" style="width:auto;margin-bottom:16px;">${ICONS.plus} إضافة بند</button>
       <div class="form-group"><label class="form-label">${type === 'sale' ? 'العميل' : 'المورد'}</label><select class="select" id="inv-entity">${entOpts}</select></div>
       <div class="form-group"><label class="form-label">التاريخ</label><input type="date" class="input" id="inv-date" value="${new Date().toISOString().split('T')[0]}"></div>
       <div class="form-group"><label class="form-label">الرقم المرجعي</label><input type="text" class="input" id="inv-ref" placeholder="رقم الفاتورة أو المرجع"></div>
-      <div class="form-group"><label class="form-label">المبلغ المدفوع</label><input type="number" step="0.01" class="input" id="inv-paid" value="0"></div>
       <div class="form-group"><label class="form-label">ملاحظات</label><textarea class="textarea" id="inv-notes" placeholder="أي ملاحظات إضافية..."></textarea></div>
-      <div style="background:var(--bg);border-radius:12px;padding:16px;display:flex;justify-content:space-between;"><span>الإجمالي:</span><span id="inv-grand-total" style="font-size:22px;font-weight:900;color:var(--primary);">0.00</span></div>`;
+      <div style="background:var(--bg);border-radius:12px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group" style="margin:0;"><label class="form-label">المبلغ المدفوع</label><input type="number" step="0.01" class="input" id="inv-paid" placeholder="0.00" value="0"></div>
+        <div class="form-group" style="margin:0;"><label class="form-label">الإجمالي</label><div id="inv-grand-total" style="font-size:22px;font-weight:900;color:var(--primary);padding:8px 0;">0.00</div></div>
+      </div>`;
 
-    const modal = openModal({ title: `فاتورة ${type === 'sale' ? 'مبيعات' : 'مشتريات'}`, bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="inv-cancel">إلغاء</button><button class="btn btn-primary" id="inv-save">${ICONS.check} حفظ</button>` });
+    const modal = openModal({ title: `فاتورة ${type === 'sale' ? 'مبيعات' : 'مشتريات'}`, bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="inv-cancel">إلغاء</button><button class="btn btn-primary" id="inv-save">${ICONS.check} حفظ الفاتورة</button>` });
     const container = modal.element;
 
+    // === دوال حسابية مطابقة للمرجع ===
     const updateGrandTotal = () => {
-      let t = 0;
-      container.querySelectorAll('.total-input').forEach(inp => t += parseFloat(inp.value) || 0);
-      const gt = container.querySelector('#inv-grand-total');
-      if (gt) gt.textContent = formatNumber(t);
+      let total = 0;
+      container.querySelectorAll('.total-input').forEach(inp => total += parseFloat(inp.value) || 0);
+      container.querySelector('#inv-grand-total').textContent = formatNumber(total);
     };
 
-    // دوال مساعدة للوحدات
-    const getUnitOptions = item => {
+    function isDup(itemId, currentRow) {
+      if (!itemId) return false;
+      let found = false;
+      container.querySelectorAll('.line-row').forEach(r => {
+        if (r !== currentRow && r.querySelector('.item-select')?.value === itemId) found = true;
+      });
+      return found;
+    }
+
+    function getUnitOptions(item) {
       if (!item) return '<option value="">اختر مادة</option>';
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
-      let opts = `<option value="" data-factor="1" selected>${baseName} (أساسية)</option>`;
+      let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
       (item.item_units || []).forEach(iu => {
         const unit = unitsCache.find(u => u.id == iu.unit_id) || {};
-        opts += `<option value="${iu.unit_id}" data-factor="${iu.conversion_factor}">${unit.name || iu.unit_id} (×${iu.conversion_factor})</option>`;
+        opts += `<option value="${iu.unit_id}" data-factor="${iu.conversion_factor}">${unit.name || unit.abbreviation || 'وحدة'} (×${iu.conversion_factor})</option>`;
       });
       return opts;
-    };
+    }
 
-    const calc = row => {
-      const qtyInput = row.querySelector('.qty-input');
-      const priceInput = row.querySelector('.price-input');
-      const unitSelect = row.querySelector('.unit-select');
-      const hintSpan = row.querySelector('.qty-hint');
-      const totalInput = row.querySelector('.total-input');
-
-      const qty = parseFloat(qtyInput?.value) || 0;
-      const price = parseFloat(priceInput?.value) || 0;
-      const factor = parseFloat(unitSelect?.selectedOptions[0]?.dataset.factor || 1);
-
-      const baseQty = qty * factor;
-      const total = baseQty * price;
-      if (totalInput) totalInput.value = total.toFixed(2);
-
-      if (hintSpan) {
-        const itemId = row.querySelector('.item-select')?.value;
-        const item = itemsCache.find(i => i.id == itemId);
-        const baseUnitName = unitSelect?.selectedOptions[0]?.text?.split(' ')[0] || (item ? (unitsCache.find(u => u.id == item.base_unit_id)?.name || 'قطعة') : 'قطعة');
-        if (factor !== 1 && qty > 0) {
-          hintSpan.textContent = `= ${baseQty} ${baseUnitName}`;
-          hintSpan.style.display = 'inline';
-        } else {
-          hintSpan.style.display = 'none';
-        }
+    function autoFill(selectEl, priceEl, unitSelectEl) {
+      const itemId = selectEl.value;
+      if (!itemId) {
+        priceEl.value = '';
+        if (unitSelectEl) { unitSelectEl.innerHTML = '<option value="">اختر مادة</option>'; unitSelectEl.style.display = 'none'; }
+        return;
       }
-      updateGrandTotal();
-    };
-
-    const rowHandler = row => {
-      const itemSelect = row.querySelector('.item-select');
-      const priceInput = row.querySelector('.price-input');
-      const unitSelect = row.querySelector('.unit-select');
-      const qtyInput = row.querySelector('.qty-input');
-
-      itemSelect.addEventListener('change', () => {
-        const item = itemsCache.find(i => i.id == itemSelect.value);
-        if (item) {
-          const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
-          priceInput.value = basePrice;
-          unitSelect.innerHTML = getUnitOptions(item);
-          unitSelect.style.display = 'block';
-        } else {
-          priceInput.value = '';
-          unitSelect.innerHTML = '<option value="">الوحدة</option>';
-          unitSelect.style.display = 'none';
+      const item = itemsCache.find(i => i.id == itemId);
+      if (item) {
+        const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
+        priceEl.value = basePrice;
+        if (unitSelectEl) {
+          unitSelectEl.innerHTML = getUnitOptions(item);
+          unitSelectEl.style.display = 'block';
+          unitSelectEl.dataset.basePrice = basePrice;
         }
-        calc(row);
+        const row = selectEl.closest('.line-row');
+        const qtyInput = row.querySelector('.qty-input');
+        const totalInput = row.querySelector('.total-input');
+        if (qtyInput && totalInput) {
+          totalInput.value = ((parseFloat(qtyInput.value) || 0) * basePrice).toFixed(2);
+        }
+        updateGrandTotal();
+      }
+    }
+
+    function calcRow(row) {
+      const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
+      const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
+      row.querySelector('.total-input').value = (qty * price).toFixed(2);
+      updateGrandTotal();
+    }
+
+    function handleUnitChange(row) {
+      const sel = row.querySelector('.item-select');
+      const unitSel = row.querySelector('.unit-select');
+      const priceEl = row.querySelector('.price-input');
+      if (!sel || !unitSel || !priceEl) return;
+      const item = itemsCache.find(i => i.id == sel.value);
+      if (!item) return;
+      const factor = parseFloat(unitSel.selectedOptions[0]?.dataset.factor || 1);
+      const basePrice = parseFloat(unitSel.dataset.basePrice || 0);
+      // السعر المعروض = السعر الأساسي × عامل التحويل
+      priceEl.value = (basePrice * factor).toFixed(2);
+      calcRow(row);
+    }
+
+    // تجهيز الصفوف الأولى
+    container.querySelectorAll('.line-row').forEach(row => {
+      const sel = row.querySelector('.item-select');
+      const price = row.querySelector('.price-input');
+      const unitSel = row.querySelector('.unit-select');
+      if (sel && price) autoFill(sel, price, unitSel);
+      sel?.addEventListener('change', function () {
+        if (isDup(this.value, this.closest('.line-row'))) {
+          showToast('المادة مضافة مسبقاً', 'warning');
+          this.value = '';
+          price.value = '';
+          if (unitSel) unitSel.style.display = 'none';
+          return;
+        }
+        autoFill(this, price, unitSel);
       });
-
-      unitSelect?.addEventListener('change', () => calc(row));
-      qtyInput?.addEventListener('input', () => calc(row));
-      priceInput?.addEventListener('input', () => calc(row));
-    };
-
-    container.querySelectorAll('.line-row').forEach(row => rowHandler(row));
-
-    container.querySelector('#btn-add-line').addEventListener('click', () => {
-      const nl = document.createElement('div');
-      nl.className = 'line-row';
-      nl.innerHTML = `<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
-      <div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>
-      <div class="form-group" style="position:relative;">
-        <input type="number" step="any" class="input qty-input" placeholder="الكمية">
-        <span class="qty-hint" style="display:none; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-muted); background:var(--bg); padding:2px 8px; border-radius:6px;"></span>
-      </div>
-      <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="سعر الوحدة الأساسية"></div>
-      <div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>
-      <button class="line-remove">${ICONS.trash}</button>`;
-      container.querySelector('#inv-lines').appendChild(nl);
-      rowHandler(nl);
-      nl.querySelector('.line-remove').addEventListener('click', () => { nl.remove(); updateGrandTotal(); });
+      row.querySelector('.qty-input')?.addEventListener('input', () => calcRow(row));
+      row.querySelector('.price-input')?.addEventListener('input', () => calcRow(row));
+      unitSel?.addEventListener('change', () => handleUnitChange(row));
     });
 
-    modal.element.querySelector('#inv-cancel').onclick = () => modal.close();
+    // إضافة بند جديد
+    container.querySelector('#btn-add-line').addEventListener('click', () => {
+      const linesContainer = container.querySelector('#inv-lines');
+      const nl = document.createElement('div');
+      nl.className = 'line-row';
+      nl.innerHTML = `
+        <div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
+        <div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>
+        <div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>
+        <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>
+        <div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>
+        <button class="line-remove">${ICONS.trash}</button>`;
+      linesContainer.appendChild(nl);
+
+      const newSel = nl.querySelector('.item-select');
+      const newPrice = nl.querySelector('.price-input');
+      const newUnit = nl.querySelector('.unit-select');
+      newSel.addEventListener('change', function () {
+        if (isDup(this.value, this.closest('.line-row'))) {
+          showToast('المادة مضافة مسبقاً', 'warning');
+          this.value = '';
+          newPrice.value = '';
+          if (newUnit) newUnit.style.display = 'none';
+          return;
+        }
+        autoFill(this, newPrice, newUnit);
+      });
+      nl.querySelector('.qty-input').addEventListener('input', () => calcRow(nl));
+      nl.querySelector('.price-input').addEventListener('input', () => calcRow(nl));
+      newUnit?.addEventListener('change', () => handleUnitChange(nl));
+      nl.querySelector('.line-remove').addEventListener('click', () => {
+        if (linesContainer.querySelectorAll('.line-row').length > 1) {
+          nl.remove();
+          updateGrandTotal();
+        }
+      });
+    });
+
+    // === حفظ الفاتورة ===
     modal.element.querySelector('#inv-save').onclick = async () => {
       const lines = [];
-      container.querySelectorAll('.line-row').forEach(row => {
+      const rows = container.querySelectorAll('.line-row');
+      let dupCheck = new Set();
+      for (const row of rows) {
         const itemId = row.querySelector('.item-select')?.value || null;
-        const unitId = row.querySelector('.unit-select')?.value || null;
-        const factor = parseFloat(row.querySelector('.unit-select')?.selectedOptions[0]?.dataset.factor || 1);
+        if (itemId) {
+          if (dupCheck.has(itemId)) return showToast('لا يمكن تكرار نفس المادة', 'error');
+          dupCheck.add(itemId);
+        }
+        const unitSel = row.querySelector('.unit-select');
+        const unitId = unitSel?.value || null;
+        const factor = parseFloat(unitSel?.selectedOptions[0]?.dataset.factor || 1);
         const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
-        const price = parseFloat(row.querySelector('.price-input')?.value) || 0; // سعر الوحدة الأساسية
-        const baseQty = qty * factor;
-        const total = baseQty * price;
-        if (itemId || qty > 0) lines.push({
-          item_id: itemId,
-          unit_id: unitId || null,
-          quantity: qty,
-          conversion_factor: factor,
-          unit_price: price,
-          total: total
-        });
-      });
+        const price = parseFloat(row.querySelector('.price-input')?.value) || 0; // سعر الوحدة المختارة
+        const total = parseFloat(row.querySelector('.total-input')?.value) || 0;
+        // نستخرج السعر الأساسي
+        const basePrice = factor !== 0 ? price / factor : price;
+        if (itemId || qty > 0) {
+          lines.push({
+            item_id: itemId,
+            unit_id: unitId || null,
+            quantity: qty,
+            unit_price: parseFloat(basePrice.toFixed(2)),
+            conversion_factor: factor,
+            total: total
+          });
+        }
+      }
       if (!lines.length) return showToast('أضف بنداً واحداً على الأقل', 'error');
 
-      const entity = container.querySelector('#inv-entity').value;
-      const paid = parseFloat(container.querySelector('#inv-paid').value) || 0;
       const btn = container.querySelector('#inv-save');
-      btn.disabled = true; btn.innerHTML = '⏳ جاري الحفظ...';
-
-      await apiCall('/invoices', 'POST', {
-        type,
-        customer_id: type === 'sale' && entity !== 'cash' ? entity : null,
-        supplier_id: type === 'purchase' && entity !== 'cash' ? entity : null,
-        date: container.querySelector('#inv-date').value,
-        reference: container.querySelector('#inv-ref').value.trim(),
-        notes: container.querySelector('#inv-notes').value.trim(),
-        lines,
-        total: lines.reduce((s, l) => s + l.total, 0),
-        paid_amount: paid
-      });
-      modal.close(); showToast('تم حفظ الفاتورة بنجاح', 'success'); loadInvoices();
+      btn.disabled = true; btn.innerHTML = '<span class="loader-inline"></span> جاري الحفظ...';
+      try {
+        await apiCall('/invoices', 'POST', {
+          type,
+          customer_id: type === 'sale' && container.querySelector('#inv-entity').value !== 'cash' ? container.querySelector('#inv-entity').value : null,
+          supplier_id: type === 'purchase' && container.querySelector('#inv-entity').value !== 'cash' ? container.querySelector('#inv-entity').value : null,
+          date: container.querySelector('#inv-date').value,
+          reference: container.querySelector('#inv-ref').value.trim(),
+          notes: container.querySelector('#inv-notes').value.trim(),
+          lines,
+          total: lines.reduce((s, l) => s + l.total, 0),
+          paid_amount: parseFloat(container.querySelector('#inv-paid').value) || 0
+        });
+        modal.close();
+        showToast('تم حفظ الفاتورة بنجاح', 'success');
+        loadInvoices();
+      } catch (e) {
+        showToast(e.message, 'error');
+        btn.disabled = false; btn.innerHTML = `${ICONS.check} حفظ الفاتورة`;
+      }
     };
   } catch (e) { showToast('خطأ في فتح الفاتورة: ' + e.message, 'error'); }
 }
 
-// ===== قائمة الفواتير مع عرض/طباعة/حذف =====
+// ===== عرض وتفاصيل الفواتير (محسّن بالوحدات) =====
 async function loadInvoices() {
   invoicesCache = await apiCall('/invoices', 'GET');
   const tc = document.getElementById('tab-content');
@@ -747,7 +839,9 @@ function showInvoiceDetail(inv) {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id) || {};
     const displayQty = l.quantity + ' ' + (unit.name || '');
-    return `<tr><td>${item?.name || '-'}</td><td>${displayQty}</td><td>${formatNumber(l.unit_price)}</td><td>${formatNumber(l.total)}</td></tr>`;
+    const factor = l.conversion_factor || 1;
+    const qtyHint = factor > 1 ? `<span style="color:var(--text-muted);font-size:12px;"> (${(l.quantity * factor).toFixed(2)} ${item ? (unitsCache.find(u => u.id == item.base_unit_id)?.name || 'قطعة') : ''})</span>` : '';
+    return `<tr><td>${item?.name || '-'}</td><td>${displayQty}${qtyHint}</td><td>${formatNumber(l.unit_price)}</td><td>${formatNumber(l.total)}</td></tr>`;
   }).join('');
   const modal = openModal({
     title: `فاتورة ${inv.type === 'sale' ? 'بيع' : 'شراء'} ${inv.reference || ''}`,
@@ -763,7 +857,11 @@ window.printInvoice = function (invoice, options = {}) {
   const linesHTML = (invoice.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id) || {};
-    return `<div class="row"><span>${item?.name || '-'}</span><span>${l.quantity} ${unit.name || ''}</span><span>${formatNumber(l.total)}</span></div>`;
+    const factor = l.conversion_factor || 1;
+    const qtyDisplay = factor > 1 
+      ? `${l.quantity} ${unit.name || ''} (${(l.quantity * factor).toFixed(2)} ${item ? (unitsCache.find(u => u.id == item.base_unit_id)?.name || 'قطعة') : ''})`
+      : `${l.quantity} ${unit.name || ''}`;
+    return `<div class="row"><span>${item?.name || '-'}</span><span>${qtyDisplay} x ${formatNumber(l.unit_price)}</span><span>${formatNumber(l.total)}</span></div>`;
   }).join('');
   const thermalHTML = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><style>@page{size:80mm auto;margin:0}body{width:80mm;font-size:12px;padding:4mm;font-family:sans-serif}.center{text-align:center}.bold{font-weight:900}.line{border-top:1px dashed #000;margin:6px 0}.row{display:flex;justify-content:space-between}.total{font-size:18px;color:#2563eb}</style></head><body><div class="center"><div class="bold">الراجحي للمحاسبة</div><div>فاتورة ${invoice.type === 'sale' ? 'بيع' : 'شراء'}</div></div><div class="line"></div><div class="row"><span>التاريخ:</span><span>${formatDate(invoice.date)}</span></div><div class="row"><span>المرجع:</span><span>${invoice.reference || '-'}</span></div>${linesHTML}<div class="line"></div><div class="row total"><span>الإجمالي</span><span>${formatNumber(invoice.total)}</span></div></body></html>`;
   if (preview) {
@@ -983,7 +1081,7 @@ window.printInvoice = function (invoice, options = {}) {
     };
   }
 
-  // ===== تصدير البيانات =====
+  // ===== تصدير واستيراد البيانات =====
   async function showExportDialog() {
     const tables = ['items', 'customers', 'suppliers', 'categories', 'units', 'invoices', 'invoiceLines', 'payments', 'expenses'];
     const names = { items:'المواد', customers:'العملاء', suppliers:'الموردين', categories:'التصنيفات', units:'الوحدات', invoices:'الفواتير', invoiceLines:'بنود الفواتير', payments:'الدفعات', expenses:'المصاريف' };
@@ -1026,14 +1124,12 @@ window.printInvoice = function (invoice, options = {}) {
     };
   }
 
-  // ===== استيراد البيانات (مع معاملة آمنة) =====
   async function handleImport(file) {
     if (!file) return;
     try {
       const text = await file.text();
       const data = JSON.parse(text);
       if (typeof data !== 'object' || Array.isArray(data)) throw new Error('تنسيق الملف غير صحيح');
-      
       const priorityOrder = ['categories','units','customers','suppliers','items','invoices','invoiceLines','payments','expenses'];
       const sortedTables = Object.keys(data).sort((a,b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
       if (!sortedTables.length) throw new Error('الملف فارغ');
@@ -1069,7 +1165,6 @@ window.printInvoice = function (invoice, options = {}) {
           showToast('فشل الاستيراد: ' + innerError.message, 'error');
           return;
         }
-
         [itemsCache, customersCache, suppliersCache, invoicesCache, categoriesCache, unitsCache] = await Promise.all([
           apiCall('/items', 'GET'),
           apiCall('/customers', 'GET'),
@@ -1087,9 +1182,7 @@ window.printInvoice = function (invoice, options = {}) {
         ]);
         loadDashboard();
       };
-    } catch (e) {
-      showToast('فشل استيراد الملف: ' + e.message, 'error');
-    }
+    } catch (e) { showToast('فشل استيراد الملف: ' + e.message, 'error'); }
   }
 
   // ===== التنقل =====
