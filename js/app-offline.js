@@ -3,12 +3,10 @@
   
   // ===== Global Error Handling =====
   window.addEventListener('error', function(e) {
-    console.error('[App Error]', e.message, e.filename, e.lineno);
-    if (window.showToast) showToast('خطأ في التطبيق: ' + e.message, 'error');
+    if (window.showToast) showToast('خطأ: ' + e.message, 'error');
   });
   
   window.addEventListener('unhandledrejection', function(e) {
-    console.error('[Unhandled Promise]', e.reason);
     if (window.showToast) showToast('خطأ غير متوقع', 'error');
   });
   
@@ -33,7 +31,6 @@
   var useMemoryFallback = false;
   var memoryDB = {};
   
-  // فحص وجود Dexie قبل الاستخدام
   if (typeof Dexie !== 'undefined' && Dexie) {
     try {
       db = new Dexie('AlrajhiDB');
@@ -49,17 +46,14 @@
         expenses: '++id, amount, expense_date, description'
       });
     } catch(e) {
-      console.error('[Dexie Init Error]', e);
       useMemoryFallback = true;
-      window.showToast && showToast('وضع الذاكرة المؤقتة: البيانات ستُفقد عند إغلاق التطبيق', 'warning');
+      window.showToast && showToast('⚠️ ذاكرة مؤقتة: البيانات ستُفقد', 'warning');
     }
   } else {
-    console.warn('Dexie.js غير متوفرة، سيتم استخدام الذاكرة المؤقتة فقط');
     useMemoryFallback = true;
-    window.showToast && showToast('لم يتم تحميل قاعدة البيانات، البيانات ستكون مؤقتة', 'warning');
+    window.showToast && showToast('⚠️ قاعدة بيانات غير متاحة', 'warning');
   }
   
-  // Memory fallback implementation
   function getMemoryTable(name) {
     if (!memoryDB[name]) memoryDB[name] = [];
     return {
@@ -101,7 +95,6 @@
     return db[name];
   }
   
-  // ===== Formatting Functions =====
   function formatNumber(num) { 
     return Number(num||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); 
   }
@@ -110,7 +103,6 @@
     return dateStr ? new Date(dateStr).toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'}) : '-'; 
   }
   
-  // ===== Toast System =====
   window.showToast = function(message, type) {
     var container = document.getElementById('toast-container'); 
     if (!container) return;
@@ -121,7 +113,6 @@
     setTimeout(function() { toast.remove(); }, 3000);
   };
 
-// ===== Scroll Lock =====
 var scrollLockPos = 0;
 function lockScroll() {
   scrollLockPos = window.scrollY || document.documentElement.scrollTop;
@@ -138,7 +129,6 @@ function unlockScroll() {
   window.scrollTo(0, scrollLockPos);
 }
 
-// ===== API Layer =====
 async function apiCall(endpoint, method, body) {
   method = method || 'GET'; 
   body = body || {};
@@ -292,7 +282,6 @@ async function apiCall(endpoint, method, body) {
   throw new Error('Method not allowed');
 }
 
-// ===== Modal System =====
 var activeModal = null;
 function openModal(opt) {
   var portal = document.getElementById('modal-portal'); 
@@ -330,14 +319,12 @@ function confirmDialog(msg) {
   });
 }
 
-// ===== Icons =====
 var ICONS = {
   plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
 };
 
-// ===== Navigation =====
 function initNavigation() {
   var nav = document.getElementById('sidebar-nav'); 
   if (!nav) return;
@@ -360,7 +347,10 @@ function initNavigation() {
     btn.className = 'nav-item' + (tab.id === 'dashboard' ? ' active' : '');
     btn.dataset.tab = tab.id; 
     btn.textContent = tab.name;
-    btn.onclick = function() { navigateTo(tab.id); };
+    btn.onclick = function() {
+      showToast('🔘 القائمة الجانبية: ' + tab.name);
+      navigateTo(tab.id);
+    };
     nav.appendChild(btn);
   });
 }
@@ -372,6 +362,7 @@ function setActiveTab(tabName) {
 }
 
 function navigateTo(tab) {
+  showToast('🔘 Navigating to: ' + tab);
   setActiveTab(tab);
   var moreMenu = document.getElementById('more-menu'); 
   if (moreMenu) moreMenu.style.display = 'none';
@@ -397,7 +388,6 @@ function navigateTo(tab) {
         case 'reports': loadReports(); break;
       }
     } catch (e) {
-      console.error(e);
       showToast('خطأ في التحميل', 'error');
     }
     content.style.transition = 'all 0.3s'; 
@@ -405,7 +395,6 @@ function navigateTo(tab) {
   }, 50);
 }
 
-// ===== Dashboard =====
 async function loadDashboard() {
   try {
     var invoices = await apiCall('/invoices','GET');
@@ -464,14 +453,11 @@ async function loadDashboard() {
     };
   } catch(e) {
     showToast('خطأ في تحميل لوحة التحكم', 'error');
-    console.error(e);
   }
 }
 
-// ===== Caches =====
 var itemsCache = [], customersCache = [], suppliersCache = [], invoicesCache = [], categoriesCache = [], unitsCache = [];
 
-// ===== Items =====
 async function loadItems() {
   try {
     itemsCache = await apiCall('/items','GET');
@@ -490,15 +476,10 @@ async function loadItems() {
 
 function renderFilteredItems(filter) {
   var q = sanitizeInput((filter || '').trim().toLowerCase());
-  var filtered = itemsCache.filter(function(i) { 
-    return (i.name || '').toLowerCase().includes(q); 
-  });
+  var filtered = itemsCache.filter(function(i) { return (i.name || '').toLowerCase().includes(q); });
   var container = document.getElementById('items-list'); 
   if (!container) return;
-  if (!filtered.length) { 
-    container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>'; 
-    return; 
-  }
+  if (!filtered.length) { container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>'; return; }
   var html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الكمية</th><th>سعر الشراء</th><th>سعر البيع</th><th></th></tr></thead><tbody>';
   filtered.forEach(function(item) {
     html += '<tr><td style="font-weight:700;">' + sanitizeInput(item.name) + '</td><td>' + (item.quantity || 0) + '</td><td>' + formatNumber(item.purchase_price) + '</td><td>' + formatNumber(item.selling_price) + '</td><td><button class="btn btn-secondary btn-sm edit-item-btn" data-id="' + item.id + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-item-btn" data-id="' + item.id + '">' + ICONS.trash + '</button></td></tr>';
@@ -506,9 +487,7 @@ function renderFilteredItems(filter) {
   html += '</tbody></table></div>'; 
   container.innerHTML = html;
   container.querySelectorAll('.edit-item-btn').forEach(function(b) { 
-    b.addEventListener('click', function(e) { 
-      showEditItemModal(e.target.closest('button').dataset.id); 
-    }); 
+    b.addEventListener('click', function(e) { showEditItemModal(e.target.closest('button').dataset.id); }); 
   });
   container.querySelectorAll('.delete-item-btn').forEach(function(b) { 
     b.addEventListener('click', async function(e) { 
@@ -517,9 +496,7 @@ function renderFilteredItems(filter) {
           await apiCall('/items?id=' + e.target.closest('button').dataset.id, 'DELETE'); 
           showToast('تم الحذف','success'); 
           loadItems(); 
-        } catch(err) {
-          showToast('خطأ في الحذف', 'error');
-        }
+        } catch(err) { showToast('خطأ في الحذف', 'error'); }
       } 
     }); 
   });
@@ -546,9 +523,7 @@ function showAddItemModal() {
       modal.close(); 
       showToast('تم الحفظ بنجاح', 'success'); 
       loadItems();
-    } catch(e) {
-      showToast('خطأ في الحفظ: ' + e.message, 'error');
-    }
+    } catch(e) { showToast('خطأ في الحفظ: ' + e.message, 'error'); }
   };
 }
 
@@ -574,13 +549,10 @@ function showEditItemModal(id) {
       modal.close(); 
       showToast('تم التعديل بنجاح', 'success'); 
       loadItems();
-    } catch(e) {
-      showToast('خطأ في التعديل: ' + e.message, 'error');
-    }
+    } catch(e) { showToast('خطأ في التعديل: ' + e.message, 'error'); }
   };
 }
 
-// ===== Generic Sections =====
 async function loadGenericSection(endpoint, cacheKey) {
   try {
     var data = await apiCall(endpoint, 'GET');
@@ -597,12 +569,9 @@ async function loadGenericSection(endpoint, cacheKey) {
       html += '<div class="card card-hover" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:800;">' + sanitizeInput(item.name) + '</span><div style="display:flex;gap:6px;"><button class="btn btn-secondary btn-sm edit-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.edit + '</button> <button class="btn btn-danger btn-sm delete-btn" data-id="' + item.id + '" data-type="' + cacheKey + '">' + ICONS.trash + '</button></div></div>';
     });
     tc.innerHTML = html;
-  } catch(e) {
-    showToast('خطأ في تحميل البيانات', 'error');
-  }
+  } catch(e) { showToast('خطأ في تحميل البيانات', 'error'); }
 }
 
-// ===== Units =====
 async function loadUnitsSection() {
   try {
     unitsCache = await apiCall('/definitions?type=unit','GET');
@@ -633,22 +602,17 @@ async function loadUnitsSection() {
             await apiCall('/definitions?type=unit&id=' + e.target.closest('button').dataset.id,'DELETE'); 
             showToast('تم الحذف','success'); 
             loadUnitsSection(); 
-          } catch(err) {
-            showToast('خطأ في الحذف', 'error');
-          }
+          } catch(err) { showToast('خطأ في الحذف', 'error'); }
         }
       });
     });
-  } catch(e) {
-    showToast('خطأ في تحميل الوحدات', 'error');
-  }
+  } catch(e) { showToast('خطأ في تحميل الوحدات', 'error'); }
 }
 
 function showAddUnitModal() {
   showFormModal('إضافة وحدة قياس', [{id:'name',label:'اسم الوحدة'},{id:'abbreviation',label:'الاختصار'}], {}, function(v) { return apiCall('/definitions?type=unit','POST',{type:'unit',...v}); }, function() { loadUnitsSection(); });
 }
 
-// ===== Form Modal =====
 function showFormModal(title, fields, initialValues, onSave, onSuccess) {
   var formId = 'frm-' + Date.now();
   var body = '';
@@ -673,13 +637,10 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       modal.close(); 
       showToast('تم الحفظ','success');
       if (onSuccess) onSuccess();
-    } catch(e) {
-      showToast('خطأ في الحفظ: ' + e.message, 'error');
-    }
+    } catch(e) { showToast('خطأ في الحفظ: ' + e.message, 'error'); }
   };
 }
 
-  // ===== Invoice Modal =====
   async function showInvoiceModal(type) {
     try {
       customersCache = await apiCall('/customers','GET');
@@ -760,7 +721,6 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     }
   }
   
-  // ===== Invoices =====
   async function loadInvoices() {
     try {
       invoicesCache = await apiCall('/invoices','GET');
@@ -786,10 +746,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     if (filt !== 'all') data = data.filter(function(inv) { return inv.type === filt; });
     var container = document.getElementById('inv-list'); 
     if (!container) return;
-    if (!data.length) { 
-      container.innerHTML = '<div class="empty-state"><h3>لا توجد فواتير</h3></div>'; 
-      return; 
-    }
+    if (!data.length) { container.innerHTML = '<div class="empty-state"><h3>لا توجد فواتير</h3></div>'; return; }
     var html = '';
     data.forEach(function(inv) {
       html += '<div class="card card-hover"><div style="display:flex;justify-content:space-between;"><span><span style="background:' + (inv.type==='sale'?'var(--success-light)':'var(--warning-light)') + ';color:' + (inv.type==='sale'?'var(--success)':'var(--warning)') + ';padding:2px 10px;border-radius:20px;font-size:12px;">' + (inv.type==='sale'?'بيع':'شراء') + '</span> ' + sanitizeInput(inv.reference||'') + '</span><span style="font-weight:900;">' + formatNumber(inv.total) + '</span></div><div style="margin-top:8px;font-size:13px;color:var(--text-muted);">' + formatDate(inv.date) + ' · مدفوع: ' + formatNumber(inv.paid||0) + ' · باقي: ' + formatNumber(inv.balance||0) + '</div></div>';
@@ -797,7 +754,6 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     container.innerHTML = html;
   }
   
-  // ===== Payments =====
   async function loadPayments() {
     try {
       var payments = await apiCall('/payments','GET');
@@ -811,9 +767,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       tc.innerHTML = html;
       var addBtn = document.getElementById('btn-add-pmt'); 
       if (addBtn) addBtn.addEventListener('click', showAddPaymentModal);
-    } catch(e) {
-      showToast('خطأ في تحميل الدفعات', 'error');
-    }
+    } catch(e) { showToast('خطأ في تحميل الدفعات', 'error'); }
   }
   
   function showAddPaymentModal() {
@@ -839,13 +793,10 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
         modal.close(); 
         showToast('تم الحفظ','success'); 
         loadPayments();
-      } catch(e) {
-        showToast('خطأ في الحفظ: ' + e.message, 'error');
-      }
+      } catch(e) { showToast('خطأ في الحفظ: ' + e.message, 'error'); }
     };
   }
   
-  // ===== Expenses =====
   async function loadExpenses() {
     try {
       var expenses = await apiCall('/expenses','GET');
@@ -865,12 +816,9 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
           function() { loadExpenses(); }
         ); 
       });
-    } catch(e) {
-      showToast('خطأ في تحميل المصاريف', 'error');
-    }
+    } catch(e) { showToast('خطأ في تحميل المصاريف', 'error'); }
   }
   
-  // ===== Reports =====
   function loadReports() {
     var tc = document.getElementById('tab-content'); 
     if (!tc) return;
@@ -879,7 +827,6 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     if (rpt) rpt.addEventListener('click', loadDashboard);
   }
   
-  // ===== Event Listeners =====
   function initEventListeners() {
     var menuToggle = document.getElementById('menu-toggle'); 
     if (menuToggle) menuToggle.addEventListener('click', function() { 
@@ -894,6 +841,7 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     document.querySelectorAll('.bottom-item').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var tab = btn.dataset.tab;
+        showToast('⬇️ شريط سفلي: ' + tab);
         if (tab === 'more') { 
           var mm = document.getElementById('more-menu'); 
           if (mm) { mm.style.display = 'flex'; lockScroll(); } 
@@ -903,11 +851,11 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     });
     var helpBtn = document.getElementById('btn-help'); 
     if (helpBtn) helpBtn.addEventListener('click', function() { 
-      openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p><p>تم تطويره ليعمل بدون إنترنت</p>' }); 
+      openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
     });
+    showToast('✅ المستمعات جاهزة');
   }
   
-  // ===== Global Click Handler =====
   document.addEventListener('click', async function(e) {
     var t = e.target.closest('button'); 
     if (!t) return;
@@ -938,14 +886,11 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
           await apiCall(delUrls[type],'DELETE'); 
           showToast('تم الحذف','success');
           loadGenericSection(delUrls[type].split('?')[0], type);
-        } catch(e) {
-          showToast('خطأ في الحذف', 'error');
-        }
+        } catch(e) { showToast('خطأ في الحذف', 'error'); }
       }
     }
   });
   
-  // ===== App Initialization =====
   async function initApp() {
     try {
       initNavigation();
@@ -965,12 +910,12 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       categoriesCache = results[4]; 
       unitsCache = results[5];
     } catch (e) { 
-      console.error(e); 
       showToast('خطأ في تهيئة التطبيق', 'error');
     }
     loadDashboard();
     var loader = document.getElementById('loading-screen'); 
     if (loader) loader.classList.add('hidden');
+    showToast('✅ التطبيق جاهز');
   }
   
   initApp().catch(function(err) {
