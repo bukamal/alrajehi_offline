@@ -1,15 +1,26 @@
 (function() {
   'use strict';
-  
+
+  // ===== سجل التتبع المرئي =====
+  function debugLog(msg) {
+    var el = document.getElementById('debug-log');
+    if (el) {
+      el.textContent += msg + '\n';
+      el.scrollTop = el.scrollHeight;
+    }
+    // احتياطي: showToast أيضاً
+    if (window.showToast) showToast(msg, 'info');
+  }
+
   // ===== Global Error Handling =====
   window.addEventListener('error', function(e) {
-    if (window.showToast) showToast('خطأ: ' + e.message, 'error');
+    debugLog('[Error] ' + e.message + ' at line ' + e.lineno);
   });
   
   window.addEventListener('unhandledrejection', function(e) {
-    if (window.showToast) showToast('خطأ غير متوقع', 'error');
+    debugLog('[Promise] ' + e.reason);
   });
-  
+
   // ===== Input Sanitization =====
   function sanitizeInput(input) {
     if (typeof input !== 'string') return input;
@@ -25,12 +36,12 @@
     if (max !== undefined && num > max) num = max;
     return num;
   }
-  
+
   // ===== Database Setup with Fallback =====
   var db;
   var useMemoryFallback = false;
   var memoryDB = {};
-  
+
   if (typeof Dexie !== 'undefined' && Dexie) {
     try {
       db = new Dexie('AlrajhiDB');
@@ -45,15 +56,16 @@
         payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date, notes',
         expenses: '++id, amount, expense_date, description'
       });
+      debugLog('[DB] Dexie ready');
     } catch(e) {
       useMemoryFallback = true;
-      window.showToast && showToast('⚠️ ذاكرة مؤقتة: البيانات ستُفقد', 'warning');
+      debugLog('[DB] Dexie error: ' + e.message);
     }
   } else {
     useMemoryFallback = true;
-    window.showToast && showToast('⚠️ قاعدة بيانات غير متاحة', 'warning');
+    debugLog('[DB] Dexie not found');
   }
-  
+
   function getMemoryTable(name) {
     if (!memoryDB[name]) memoryDB[name] = [];
     return {
@@ -89,20 +101,20 @@
       }
     };
   }
-  
+
   function getTable(name) {
     if (useMemoryFallback || !db) return getMemoryTable(name);
     return db[name];
   }
-  
+
   function formatNumber(num) { 
     return Number(num||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); 
   }
-  
+
   function formatDate(dateStr) { 
     return dateStr ? new Date(dateStr).toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'}) : '-'; 
   }
-  
+
   window.showToast = function(message, type) {
     var container = document.getElementById('toast-container'); 
     if (!container) return;
@@ -831,44 +843,57 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
     var rpt = document.getElementById('report-summary'); 
     if (rpt) rpt.addEventListener('click', loadDashboard);
   }
-  
-  // ===== Event Listeners (with tracking) =====
-  function initEventListeners() {
-    showToast('بدء ربط الأحداث...');
-    
-    var menuToggle = document.getElementById('menu-toggle'); 
-    if (menuToggle) menuToggle.addEventListener('click', function() { 
+
+// ===== Event Listeners (with debugLog tracking) =====
+function initEventListeners() {
+  debugLog('[Events] بدء ربط الأحداث...');
+
+  var menuToggle = document.getElementById('menu-toggle'); 
+  if (menuToggle) {
+    menuToggle.addEventListener('click', function() { 
       var sb = document.getElementById('sidebar'); 
       if (sb) sb.classList.toggle('open'); 
     });
-    
-    var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
-    if (sheetBackdrop) sheetBackdrop.addEventListener('click', function() { 
+    debugLog('[Events] menu-toggle bound');
+  } else {
+    debugLog('[Events] menu-toggle NOT FOUND');
+  }
+
+  var sheetBackdrop = document.querySelector('.sheet-backdrop'); 
+  if (sheetBackdrop) {
+    sheetBackdrop.addEventListener('click', function() { 
       var mm = document.getElementById('more-menu'); 
       if (mm) { mm.style.display = 'none'; unlockScroll(); } 
     });
-    
-    document.querySelectorAll('.bottom-item').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var tab = btn.dataset.tab;
-        showToast('⬇️ شريط سفلي: ' + tab);
-        if (tab === 'more') { 
-          var mm = document.getElementById('more-menu'); 
-          if (mm) { mm.style.display = 'flex'; lockScroll(); } 
-        }
-        else if (tab) navigateTo(tab);
-      });
+    debugLog('[Events] sheet-backdrop bound');
+  } else {
+    debugLog('[Events] sheet-backdrop NOT FOUND');
+  }
+
+  var bottomItems = document.querySelectorAll('.bottom-item');
+  debugLog('[Events] Found ' + bottomItems.length + ' bottom items');
+  bottomItems.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = btn.dataset.tab;
+      debugLog('[Events] Bottom nav clicked: ' + tab);
+      if (tab === 'more') { 
+        var mm = document.getElementById('more-menu'); 
+        if (mm) { mm.style.display = 'flex'; lockScroll(); } 
+      }
+      else if (tab) navigateTo(tab);
     });
-    showToast('تم ربط الأزرار السفلية');
-    
-    var helpBtn = document.getElementById('btn-help'); 
-    if (helpBtn) helpBtn.addEventListener('click', function() { 
+  });
+
+  var helpBtn = document.getElementById('btn-help'); 
+  if (helpBtn) {
+    helpBtn.addEventListener('click', function() { 
       openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' }); 
     });
-    
-    showToast('✅ المستمعات جاهزة');
+    debugLog('[Events] help button bound');
   }
-  
+
+  debugLog('[Events] المستمعات جاهزة');
+}
   // ===== Global Click Handler (احتياطي لأزرار التنقل) =====
   document.addEventListener('click', async function(e) {
     // مستمع احتياطي لأي عنصر يحمل data-tab
@@ -916,12 +941,16 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       }
     }
   });
-  
-  // ===== App Initialization =====
+
+  // ===== App Initialization (with debugLog) =====
   async function initApp() {
+    debugLog('[App] Starting initialization...');
     try {
       initNavigation();
+      debugLog('[App] Navigation built');
       initEventListeners();
+      debugLog('[App] Event listeners initialized');
+      
       var results = await Promise.all([
         apiCall('/items','GET'), 
         apiCall('/customers','GET'), 
@@ -936,18 +965,24 @@ function showFormModal(title, fields, initialValues, onSave, onSuccess) {
       invoicesCache = results[3]; 
       categoriesCache = results[4]; 
       unitsCache = results[5];
+      debugLog('[App] Data loaded successfully');
     } catch (e) { 
-      showToast('خطأ في تهيئة التطبيق', 'error');
+      debugLog('[App] Init error: ' + e.message);
+      if (window.showToast) showToast('خطأ في تهيئة التطبيق', 'error');
     }
     loadDashboard();
     var loader = document.getElementById('loading-screen'); 
-    if (loader) loader.classList.add('hidden');
-    showToast('✅ التطبيق جاهز');
+    if (loader) {
+      loader.classList.add('hidden');
+      debugLog('[App] Loading screen hidden');
+    }
+    debugLog('[App] Ready - Dashboard loaded');
   }
-  
+
   initApp().catch(function(err) {
+    debugLog('[App] Fatal error: ' + err.message);
     var loader = document.getElementById('loading-screen'); 
     if (loader) loader.classList.add('hidden');
-    showToast('خطأ: ' + err.message, 'error');
+    if (window.showToast) showToast('خطأ: ' + err.message, 'error');
   });
 })();
