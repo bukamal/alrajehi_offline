@@ -1,7 +1,19 @@
 /* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 1 من 10 */
 (function() {
   'use strict';
+   // app.js - التحقق من وجود المكتبات قبل التهيئة
+(function() {
+  if (typeof Dexie === 'undefined') {
+    alert('Dexie غير متوفر. تأكد من تحميل dexie.min.js.');
+    throw new Error('Dexie not loaded');
+  }
+  if (typeof Chart === 'undefined') {
+    alert('Chart.js غير متوفر. تأكد من تحميل chart.umd.min.js.');
+    throw new Error('Chart not loaded');
+  }
+})();
 
+// ... بقية كود app.js (داخل IIFE الرئيسي)
   const ICONS = {
     home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
     box: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
