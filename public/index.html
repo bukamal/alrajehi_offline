@@ -8,29 +8,16 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <!-- Content Security Policy -->
-  
   <title>الراجحي للمحاسبة</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  
-  <!-- Dexie.js for IndexedDB -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
-  
-  <!-- Error interception before app loads -->
-  <script>
-    window.errors = [];
-    window.onerror = function(msg, url, line, col, error) {
-      window.errors.push(msg + ' (سطر ' + line + ')');
-      return false;
-    };
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <!-- Loading Screen -->
   <div id="loading-screen">
     <div class="loader-container">
       <div class="loader-logo">ر</div>
@@ -38,14 +25,10 @@
       <p class="loader-text">جاري تهيئة النظام...</p>
     </div>
   </div>
-
-  <!-- Error Screen (appears automatically if loading fails) -->
   <div id="error-screen" style="display:none; position:fixed; inset:0; background:#fff; z-index:99999; color:#dc2626; align-items:flex-start; justify-content:center; font-size:16px; padding:2rem; text-align:center; flex-direction:column; overflow-y:auto;">
     <h2 style="font-size:20px;margin-bottom:16px;">حدث خطأ</h2>
     <pre id="error-details" style="white-space:pre-wrap; word-wrap:break-word; background:#fee2e2; padding:16px; border-radius:8px; text-align:left; max-width:100%; overflow-x:auto;"></pre>
   </div>
-
-  <!-- UI Elements -->
   <div id="connection-indicator" class="connection-status online" style="display:none;">● متصل</div>
   <div id="toast-container"></div>
   <div id="modal-portal"></div>
@@ -89,38 +72,40 @@
       <div class="sheet-grid" id="sheet-grid"></div>
     </div>
   </div>
-  <!-- Auto error display after loading failure -->
-  <script>
-    (function() {
-      var loader = document.getElementById('loading-screen');
-      var errorScreen = document.getElementById('error-screen');
-      var errorDetails = document.getElementById('error-details');
-
-      setTimeout(function() {
-        if (loader && !loader.classList.contains('hidden')) {
-          loader.style.display = 'none';
-          if (window.errors.length) {
-            errorScreen.style.display = 'flex';
-            errorDetails.textContent = window.errors.join('\\n\\n');
-          } else {
-            errorScreen.style.display = 'flex';
-            errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحديث الصفحة.';
-          }
-        }
-      }, 6000);
-    })();
-  </script>
 
   <script>
+    // تسجيل Service Worker (إذا كان المتصفح يدعمه)
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
+      window.addEventListener('load', () => {
         navigator.serviceWorker.register('service-worker.js')
-          .then(function(reg) { console.log('[SW] Registered'); })
-          .catch(function(err) { console.warn('[SW] Registration failed:', err); });
+          .then(reg => console.log('[SW] Registered'))
+          .catch(err => console.warn('[SW] Registration failed:', err));
       });
     }
+
+    // معالج الأخطاء العامة
+    window.errors = [];
+    window.onerror = function(msg, url, line, col, error) {
+      window.errors.push(msg + ' (سطر ' + line + ')');
+      return false;
+    };
+
+    // إذا لم يختفي شاشة التحميل بعد 6 ثوانٍ، أظهر شاشة الخطأ
+    setTimeout(() => {
+      const loader = document.getElementById('loading-screen');
+      const errorScreen = document.getElementById('error-screen');
+      const errorDetails = document.getElementById('error-details');
+      if (loader && !loader.classList.contains('hidden')) {
+        loader.style.display = 'none';
+        errorScreen.style.display = 'flex';
+        if (window.errors.length) {
+          errorDetails.textContent = window.errors.join('\n\n');
+        } else {
+          errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحدث الصفحة.';
+        }
+      }
+    }, 6000);
   </script>
-<script src="js/app-offline.js?v=4"></script>
-<div id="debug-log" style="position:fixed; bottom:20px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace; display:none;"></div>
+  <script src="app.js"></script>
 </body>
 </html>

@@ -8,9 +8,10 @@ const urlsToCache = [
   BASE_PATH + 'manifest.json',
   BASE_PATH + 'icons/icon-192.png',
   BASE_PATH + 'icons/icon-512.png',
-  BASE_PATH + 'js/app-offline.js',
+  BASE_PATH + 'app.js',
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
-  'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js'
+  'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'
 ];
 
 self.addEventListener('install', event => {
@@ -29,9 +30,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       )
     )
   );
@@ -40,23 +39,15 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-  
   event.respondWith(
     caches.match(event.request).then(cached => {
-      const fetchPromise = fetch(event.request)
-        .then(response => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, clone);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          return cached;
-        });
-      
+      const fetchPromise = fetch(event.request).then(response => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => cached);
       return cached || fetchPromise;
     })
   );
