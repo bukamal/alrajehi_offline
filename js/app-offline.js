@@ -341,13 +341,26 @@ var ICONS = {
 function initNavigation() {
   var nav = document.getElementById('sidebar-nav'); 
   if (!nav) return;
-  var tabs = ['dashboard','items','sale-invoice','purchase-invoice','customers','suppliers','categories','units','payments','expenses','invoices','reports'];
+  var tabs = [
+    { id: 'dashboard', name: 'الرئيسية' },
+    { id: 'items', name: 'المواد' },
+    { id: 'sale-invoice', name: 'فاتورة مبيعات' },
+    { id: 'purchase-invoice', name: 'فاتورة مشتريات' },
+    { id: 'customers', name: 'العملاء' },
+    { id: 'suppliers', name: 'الموردين' },
+    { id: 'categories', name: 'التصنيفات' },
+    { id: 'units', name: 'وحدات القياس' },
+    { id: 'payments', name: 'الدفعات' },
+    { id: 'expenses', name: 'المصاريف' },
+    { id: 'invoices', name: 'الفواتير' },
+    { id: 'reports', name: 'التقارير' }
+  ];
   tabs.forEach(function(tab) {
     var btn = document.createElement('button');
-    btn.className = 'nav-item' + (tab === 'dashboard' ? ' active' : '');
-    btn.dataset.tab = tab; 
-    btn.textContent = tab;
-    btn.onclick = function() { navigateTo(tab); };
+    btn.className = 'nav-item' + (tab.id === 'dashboard' ? ' active' : '');
+    btn.dataset.tab = tab.id; 
+    btn.textContent = tab.name;
+    btn.onclick = function() { navigateTo(tab.id); };
     nav.appendChild(btn);
   });
 }
