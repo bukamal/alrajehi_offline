@@ -135,7 +135,6 @@
       await getTable(tbl).delete(id); return {success:true};
     } else if(method==='PUT'){
       let tbl = table.replace('/','');
-      // استخراج id من الرابط أو من الجسم
       let recordId = id;
       if (!recordId) recordId = body.id;
       if (recordId === undefined || recordId === null) throw new Error('معرّف السجل مطلوب للتعديل');
@@ -247,8 +246,8 @@ window.showItemDetail = function (itemId) {
         <div><strong>نوع المادة:</strong> ${item.item_type || 'مخزون'}</div>
         <div><strong>الوحدة الأساسية:</strong> ${baseName}</div>
         <div><strong>الكمية:</strong> ${item.quantity || 0}</div>
-        <div><strong>سعر الشراء:</strong> ${formatNumber(item.purchase_price)}</div>
-        <div><strong>سعر البيع:</strong> ${formatNumber(item.selling_price)}</div>
+        <div><strong>سعر الشراء (للوحدة الأساسية):</strong> ${formatNumber(item.purchase_price)}</div>
+        <div><strong>سعر البيع (للوحدة الأساسية):</strong> ${formatNumber(item.selling_price)}</div>
       </div>
       ${unitsHtml}
     `,
@@ -281,8 +280,8 @@ function showAddItemModal() {
       <div class="form-group"><label class="form-label">وحدة فرعية 2</label><input class="input" id="fm-unit3-name" placeholder="الاسم"><input class="input" id="fm-unit3-factor" type="number" placeholder="عامل التحويل"></div>
     </div>
     <div class="form-group"><label class="form-label">الكمية الافتتاحية</label><div style="display:flex;gap:8px;"><input class="input" id="fm-quantity" type="number" value="0" style="flex:1;"><select class="select" id="fm-qty-unit" style="width:150px;"><option value="base">الوحدة الأساسية</option><option value="u2">الوحدة الفرعية 1</option><option value="u3">الوحدة الفرعية 2</option></select></div><div id="qty-converted" style="font-size:12px;color:var(--text-muted);margin-top:4px;display:none;">= <strong id="qty-base-val">0</strong> قطعة</div></div>
-    <div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" value="0"></div>
-    <div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" value="0"></div>`;
+    <div class="form-group"><label class="form-label">سعر الشراء (للوحدة الأساسية)</label><input class="input" id="fm-purchase" type="number" value="0"></div>
+    <div class="form-group"><label class="form-label">سعر البيع (للوحدة الأساسية)</label><input class="input" id="fm-selling" type="number" value="0"></div>`;
 
   const modal = openModal({ title: 'إضافة مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
   const baseNameInput = modal.element.querySelector('#fm-baseUnit');
@@ -387,9 +386,9 @@ function showEditItemModal(id) {
     <div class="form-group"><label class="form-label">التصنيف</label><select class="select" id="fm-category_id"><option value="">بدون تصنيف</option>${catOpts}</select></div>
     <div class="form-group"><label class="form-label">الوحدة الأساسية</label><input class="input" id="fm-baseUnit" value="${baseUnitName}"></div>
     <div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-quantity" type="number" value="${item.quantity || 0}"></div>
-    <div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" value="${item.purchase_price || 0}"></div>
-    <div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" value="${item.selling_price || 0}"></div>`;
-  const modal = openModal({ title: 'تعديل مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
+    <div class="form-group"><label class="form-label">سعر الشراء (للوحدة الأساسية)</label><input class="input" id="fm-purchase" type="number" value="${item.purchase_price || 0}"></div>
+    <div class="form-group"><label class="form-label">سعر البيع (للوحدة الأساسية)</label><input class="input" id="fm-selling" type="number" value="${item.selling_price || 0}"></div>`;
+  const modal = openModal({ title: 'تعد��ل مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
 
   modal.element.querySelector('#fm-cancel').onclick = () => modal.close();
   modal.element.querySelector('#fm-save').onclick = async () => {
@@ -519,7 +518,7 @@ document.addEventListener('click', async e => {
   }
 });
 
-// ===== فاتورة (بيع / شراء) مع حقل المبلغ المدفوع وتسجيل دفعة تلقائية =====
+// ===== فاتورة (بيع / شراء) مع معالجة الوحدات الصحيحة =====
 async function showInvoiceModal(type) {
   try {
     customersCache = await apiCall('/customers', 'GET');
@@ -535,10 +534,13 @@ async function showInvoiceModal(type) {
       <input type="hidden" id="inv-type" value="${type}">
       <div class="invoice-lines" id="inv-lines">
         <div class="line-row">
-          <div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}" data-price="${type === 'sale' ? i.selling_price : i.purchase_price}">${i.name}</option>`).join('')}</select></div>
+          <div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
           <div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>
-          <div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>
-          <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>
+          <div class="form-group" style="position:relative;">
+            <input type="number" step="any" class="input qty-input" placeholder="الكمية">
+            <span class="qty-hint" style="display:none; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-muted); background:var(--bg); padding:2px 8px; border-radius:6px;"></span>
+          </div>
+          <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="سعر الوحدة الأساسية"></div>
           <div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>
         </div>
       </div>
@@ -560,53 +562,72 @@ async function showInvoiceModal(type) {
       if (gt) gt.textContent = formatNumber(t);
     };
 
-    const calc = row => {
-      const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
-      const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
-      const tot = row.querySelector('.total-input');
-      if (tot) { tot.value = (qty * price).toFixed(2); updateGrandTotal(); }
-    };
-
+    // دوال مساعدة للوحدات
     const getUnitOptions = item => {
       if (!item) return '<option value="">اختر مادة</option>';
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
-      let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
+      let opts = `<option value="" data-factor="1" selected>${baseName} (أساسية)</option>`;
       (item.item_units || []).forEach(iu => {
         const unit = unitsCache.find(u => u.id == iu.unit_id) || {};
-        opts += `<option value="${iu.unit_id}" data-factor="${iu.conversion_factor}">${unit.name || unit.abbreviation || 'وحدة'} (×${iu.conversion_factor})</option>`;
+        opts += `<option value="${iu.unit_id}" data-factor="${iu.conversion_factor}">${unit.name || iu.unit_id} (×${iu.conversion_factor})</option>`;
       });
       return opts;
     };
 
-    const rowHandler = row => {
-      const sel = row.querySelector('.item-select');
-      const pr = row.querySelector('.price-input');
-      const unitSel = row.querySelector('.unit-select');
+    const calc = row => {
+      const qtyInput = row.querySelector('.qty-input');
+      const priceInput = row.querySelector('.price-input');
+      const unitSelect = row.querySelector('.unit-select');
+      const hintSpan = row.querySelector('.qty-hint');
+      const totalInput = row.querySelector('.total-input');
 
-      sel.addEventListener('change', () => {
-        const item = itemsCache.find(i => i.id == sel.value);
+      const qty = parseFloat(qtyInput?.value) || 0;
+      const price = parseFloat(priceInput?.value) || 0;
+      const factor = parseFloat(unitSelect?.selectedOptions[0]?.dataset.factor || 1);
+
+      const baseQty = qty * factor;
+      const total = baseQty * price;
+      if (totalInput) totalInput.value = total.toFixed(2);
+
+      if (hintSpan) {
+        const itemId = row.querySelector('.item-select')?.value;
+        const item = itemsCache.find(i => i.id == itemId);
+        const baseUnitName = unitSelect?.selectedOptions[0]?.text?.split(' ')[0] || (item ? (unitsCache.find(u => u.id == item.base_unit_id)?.name || 'قطعة') : 'قطعة');
+        if (factor !== 1 && qty > 0) {
+          hintSpan.textContent = `= ${baseQty} ${baseUnitName}`;
+          hintSpan.style.display = 'inline';
+        } else {
+          hintSpan.style.display = 'none';
+        }
+      }
+      updateGrandTotal();
+    };
+
+    const rowHandler = row => {
+      const itemSelect = row.querySelector('.item-select');
+      const priceInput = row.querySelector('.price-input');
+      const unitSelect = row.querySelector('.unit-select');
+      const qtyInput = row.querySelector('.qty-input');
+
+      itemSelect.addEventListener('change', () => {
+        const item = itemsCache.find(i => i.id == itemSelect.value);
         if (item) {
           const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
-          pr.value = basePrice;
-          if (unitSel) {
-            unitSel.innerHTML = getUnitOptions(item);
-            unitSel.style.display = 'block';
-            unitSel.dataset.basePrice = basePrice;
-          }
-          calc(row);
+          priceInput.value = basePrice;
+          unitSelect.innerHTML = getUnitOptions(item);
+          unitSelect.style.display = 'block';
         } else {
-          pr.value = '';
-          if (unitSel) { unitSel.innerHTML = '<option value="">الوحدة</option>'; unitSel.style.display = 'none'; }
+          priceInput.value = '';
+          unitSelect.innerHTML = '<option value="">الوحدة</option>';
+          unitSelect.style.display = 'none';
         }
-      });
-
-      row.querySelector('.qty-input')?.addEventListener('input', () => calc(row));
-      row.querySelector('.price-input')?.addEventListener('input', () => calc(row));
-
-      unitSel?.addEventListener('change', () => {
         calc(row);
       });
+
+      unitSelect?.addEventListener('change', () => calc(row));
+      qtyInput?.addEventListener('input', () => calc(row));
+      priceInput?.addEventListener('input', () => calc(row));
     };
 
     container.querySelectorAll('.line-row').forEach(row => rowHandler(row));
@@ -614,10 +635,13 @@ async function showInvoiceModal(type) {
     container.querySelector('#btn-add-line').addEventListener('click', () => {
       const nl = document.createElement('div');
       nl.className = 'line-row';
-      nl.innerHTML = `<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}" data-price="${type === 'sale' ? i.selling_price : i.purchase_price}">${i.name}</option>`).join('')}</select></div>
+      nl.innerHTML = `<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>${itemsCache.map(i => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
       <div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>
-      <div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>
-      <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>
+      <div class="form-group" style="position:relative;">
+        <input type="number" step="any" class="input qty-input" placeholder="الكمية">
+        <span class="qty-hint" style="display:none; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-muted); background:var(--bg); padding:2px 8px; border-radius:6px;"></span>
+      </div>
+      <div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="سعر الوحدة الأساسية"></div>
       <div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>
       <button class="line-remove">${ICONS.trash}</button>`;
       container.querySelector('#inv-lines').appendChild(nl);
@@ -629,13 +653,21 @@ async function showInvoiceModal(type) {
     modal.element.querySelector('#inv-save').onclick = async () => {
       const lines = [];
       container.querySelectorAll('.line-row').forEach(row => {
-        const id = row.querySelector('.item-select')?.value || null;
+        const itemId = row.querySelector('.item-select')?.value || null;
         const unitId = row.querySelector('.unit-select')?.value || null;
         const factor = parseFloat(row.querySelector('.unit-select')?.selectedOptions[0]?.dataset.factor || 1);
         const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
-        const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
-        const total = parseFloat(row.querySelector('.total-input')?.value) || 0;
-        if (id || qty > 0) lines.push({ item_id: id, unit_id: unitId, quantity: qty, unit_price: price, total, conversion_factor: factor });
+        const price = parseFloat(row.querySelector('.price-input')?.value) || 0; // سعر الوحدة الأساسية
+        const baseQty = qty * factor;
+        const total = baseQty * price;
+        if (itemId || qty > 0) lines.push({
+          item_id: itemId,
+          unit_id: unitId || null,
+          quantity: qty,
+          conversion_factor: factor,
+          unit_price: price,
+          total: total
+        });
       });
       if (!lines.length) return showToast('أضف بنداً واحداً على الأقل', 'error');
 
@@ -713,12 +745,13 @@ function renderFilteredInvoices() {
 function showInvoiceDetail(inv) {
   const lines = (inv.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
-    const unit = unitsCache.find(u => u.id == l.unit_id);
-    return `<tr><td>${item ? item.name : '-'}</td><td>${l.quantity} ${unit ? unit.name : ''}</td><td>${formatNumber(l.unit_price)}</td><td>${formatNumber(l.total)}</td></tr>`;
+    const unit = unitsCache.find(u => u.id == l.unit_id) || {};
+    const displayQty = l.quantity + ' ' + (unit.name || '');
+    return `<tr><td>${item?.name || '-'}</td><td>${displayQty}</td><td>${formatNumber(l.unit_price)}</td><td>${formatNumber(l.total)}</td></tr>`;
   }).join('');
   const modal = openModal({
     title: `فاتورة ${inv.type === 'sale' ? 'بيع' : 'شراء'} ${inv.reference || ''}`,
-    bodyHTML: `<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>${lines}</tbody></table></div>
+    bodyHTML: `<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الكمية</th><th>السعر الأساسي</th><th>الإجمالي</th></tr></thead><tbody>${lines}</tbody></table></div>
     <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><strong>الإجمالي:</strong> ${formatNumber(inv.total)}</div><div><strong>المدفوع:</strong> ${formatNumber(inv.paid || 0)}</div><div><strong>المتبقي:</strong> ${formatNumber(inv.balance || 0)}</div></div>`,
     footerHTML: `<button class="btn btn-secondary" id="det-close">إغلاق</button>`
   });
@@ -729,8 +762,8 @@ window.printInvoice = function (invoice, options = {}) {
   const { preview = false } = options;
   const linesHTML = (invoice.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
-    const unit = unitsCache.find(u => u.id == l.unit_id);
-    return `<div class="row"><span>${item ? item.name : '-'}</span><span>${l.quantity} ${unit ? unit.name : ''} x ${formatNumber(l.unit_price)}</span><span>${formatNumber(l.total)}</span></div>`;
+    const unit = unitsCache.find(u => u.id == l.unit_id) || {};
+    return `<div class="row"><span>${item?.name || '-'}</span><span>${l.quantity} ${unit.name || ''}</span><span>${formatNumber(l.total)}</span></div>`;
   }).join('');
   const thermalHTML = `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><style>@page{size:80mm auto;margin:0}body{width:80mm;font-size:12px;padding:4mm;font-family:sans-serif}.center{text-align:center}.bold{font-weight:900}.line{border-top:1px dashed #000;margin:6px 0}.row{display:flex;justify-content:space-between}.total{font-size:18px;color:#2563eb}</style></head><body><div class="center"><div class="bold">الراجحي للمحاسبة</div><div>فاتورة ${invoice.type === 'sale' ? 'بيع' : 'شراء'}</div></div><div class="line"></div><div class="row"><span>التاريخ:</span><span>${formatDate(invoice.date)}</span></div><div class="row"><span>المرجع:</span><span>${invoice.reference || '-'}</span></div>${linesHTML}<div class="line"></div><div class="row total"><span>الإجمالي</span><span>${formatNumber(invoice.total)}</span></div></body></html>`;
   if (preview) {
@@ -1001,7 +1034,6 @@ window.printInvoice = function (invoice, options = {}) {
       const data = JSON.parse(text);
       if (typeof data !== 'object' || Array.isArray(data)) throw new Error('تنسيق الملف غير صحيح');
       
-      // ترتيب الجداول لضمان العلاقات
       const priorityOrder = ['categories','units','customers','suppliers','items','invoices','invoiceLines','payments','expenses'];
       const sortedTables = Object.keys(data).sort((a,b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
       if (!sortedTables.length) throw new Error('الملف فارغ');
@@ -1025,7 +1057,6 @@ window.printInvoice = function (invoice, options = {}) {
         modal.close();
         const tableNames = sortedTables.filter(t => Array.isArray(data[t]));
         try {
-          // معاملة واحدة لضمان الذرية
           await db.transaction('rw', tableNames, async () => {
             for (const table of tableNames) {
               const tableObj = getTable(table);
@@ -1039,7 +1070,6 @@ window.printInvoice = function (invoice, options = {}) {
           return;
         }
 
-        // تحديث جميع الكاشات وحساب أرصدة الفواتير المباشر
         [itemsCache, customersCache, suppliersCache, invoicesCache, categoriesCache, unitsCache] = await Promise.all([
           apiCall('/items', 'GET'),
           apiCall('/customers', 'GET'),
@@ -1164,3 +1194,4 @@ window.printInvoice = function (invoice, options = {}) {
   }
   initApp();
 })();
+
