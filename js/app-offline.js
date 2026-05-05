@@ -14,7 +14,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'debug-log';
-      el.style.cssText = 'position:fixed; bottom:80px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace;';
+      el.style.cssText = 'position:fixed; bottom:80px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0); color:transparent; font-size:0; padding:0; z-index:-1;';
       document.body.appendChild(el);
       // إظهار الرسائل المخزنة
       if (debugMessages.length) {
