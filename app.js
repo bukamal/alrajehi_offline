@@ -1,4 +1,4 @@
-/* الراجحي للمحاسبة - Offline PWA - الجزء 1 من 10 */
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 1 من 10 */
 (function() {
   'use strict';
 
@@ -27,7 +27,8 @@
     scale: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>',
     send: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
   };
-/* الراجحي للمحاسبة - Offline PWA - الجزء 2 من 10 */
+
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 2 من 10 */
   function formatNumber(num) {
     if (num === undefined || num === null) return '0.00';
     return Number(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -132,7 +133,7 @@
     });
   }
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 3 من 10 */
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 3 من 10 */
   // ========== قاعدة البيانات ==========
   const db = new Dexie('AlrajhiDBv4');
   db.version(4).stores({
@@ -151,7 +152,18 @@
     return db[name];
   }
 
-  // ========== apiCall للعمل محلياً ==========
+  // ========== دالة مساعدة لتحديث الكمية بالوحدة الأساسية ==========
+  async function updateItemQuantity(itemId, changeBaseQty) {
+    if (!itemId) return;
+    const item = await getTable('items').get(itemId);
+    if (item) {
+      const newQty = (parseFloat(item.quantity) || 0) + changeBaseQty;
+      await getTable('items').update(itemId, { quantity: Math.max(0, newQty) });
+    }
+  }
+
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 4 من 10 */
+  // ========== apiCall المعدلة مع دعم PUT للفواتير وتحديث المخزون ==========
   async function apiCall(endpoint, method, body) {
     if (method === undefined) method = 'GET';
     if (body === undefined) body = {};
@@ -222,6 +234,11 @@
                 conversion_factor: l.conversion_factor || 1,
                 total: l.total
               });
+              // تحديث المخزون
+              var change = body.type === 'purchase'
+                ? (l.quantity * (l.conversion_factor || 1))
+                : -(l.quantity * (l.conversion_factor || 1));
+              await updateItemQuantity(l.item_id, change);
             }
           }
           if (paid_amount > 0) {
@@ -268,13 +285,65 @@
       }
     }
 
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 5 من 10 */
     if (method === 'PUT') {
       var tbl = table.replace('/', '');
-      var recordId = id;
-      if (recordId === null || recordId === undefined) recordId = body.id;
+      var recordId = id || body.id;
       if (recordId === undefined || recordId === null) throw new Error('معرف السجل مطلوب للتعديل');
       var changes = Object.assign({}, body);
       delete changes.id;
+
+      // معالجة خاصة للفواتير (تحديث المخزون)
+      if (tbl === 'invoices') {
+        // جلب الفاتورة القديمة
+        var oldInv = await getTable('invoices').get(recordId);
+        if (!oldInv) throw new Error('الفاتورة غير موجودة');
+        var oldLines = await getTable('invoiceLines').where({ invoice_id: recordId }).toArray();
+
+        // عكس تأثير الكميات القديمة
+        for (var oi = 0; oi < oldLines.length; oi++) {
+          var ol = oldLines[oi];
+          var oldChange = oldInv.type === 'purchase'
+            ? -(ol.quantity * (ol.conversion_factor || 1))
+            : (ol.quantity * (ol.conversion_factor || 1));
+          await updateItemQuantity(ol.item_id, oldChange);
+        }
+
+        // حذف البنود والدفعات القديمة
+        await getTable('invoiceLines').where({ invoice_id: recordId }).delete();
+        await getTable('payments').where({ invoice_id: recordId }).delete();
+
+        // تحديث رأس الفاتورة
+        var newType = changes.type;
+        await getTable('invoices').update(recordId, changes);
+
+        // إدراج البنود الجديدة إن وجدت
+        if (changes.lines) {
+          var newLines = changes.lines;
+          delete changes.lines;
+          for (var ni = 0; ni < newLines.length; ni++) {
+            var nl = newLines[ni];
+            await getTable('invoiceLines').add({
+              invoice_id: recordId,
+              item_id: nl.item_id,
+              unit_id: nl.unit_id || null,
+              quantity: nl.quantity,
+              unit_price: nl.unit_price || 0,
+              conversion_factor: nl.conversion_factor || 1,
+              total: nl.total
+            });
+            // تطبيق تأثير الكميات الجديدة
+            var newChange = newType === 'purchase'
+              ? (nl.quantity * (nl.conversion_factor || 1))
+              : -(nl.quantity * (nl.conversion_factor || 1));
+            await updateItemQuantity(nl.item_id, newChange);
+          }
+        }
+
+        return { id: recordId, ...changes };
+      }
+
+      // تعديل باقي السجلات
       if (tbl === 'definitions') {
         var defType = type || changes.type;
         delete changes.type;
@@ -293,17 +362,38 @@
 
     if (method === 'DELETE') {
       var dTbl = table.split('?')[0].replace('/', '');
+
+      // منع حذف عميل/مورد مرتبط بفواتير
+      if (dTbl === 'customers' || dTbl === 'suppliers') {
+        var checkField = dTbl === 'customers' ? 'customer_id' : 'supplier_id';
+        var checkResult = await getTable('invoices').where(checkField).equals(id).count();
+        if (checkResult > 0) {
+          throw new Error('لا يمكن حذف ' + (dTbl === 'customers' ? 'العميل' : 'المورد') + ' لارتباطه بفواتير');
+        }
+      }
+
+      // معالجة خاصة للفواتير (عكس المخزون)
       if (dTbl === 'invoices') {
+        var oldLines = await getTable('invoiceLines').where({ invoice_id: id }).toArray();
+        var inv = await getTable('invoices').get(id);
+        for (var li = 0; li < oldLines.length; li++) {
+          var l = oldLines[li];
+          var change = inv.type === 'purchase'
+            ? -(l.quantity * (l.conversion_factor || 1))
+            : (l.quantity * (l.conversion_factor || 1));
+          await updateItemQuantity(l.item_id, change);
+        }
         await getTable('invoiceLines').where({ invoice_id: id }).delete();
         await getTable('payments').where({ invoice_id: id }).delete();
       }
+
       await getTable(dTbl).delete(id);
       return { success: true };
     }
   }
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 4 من 10 */
-  // ========== المتغيرات العامة (الكاش) ==========
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 6 من 10 */
+  // ========== الكاش العام ==========
   var itemsCache = [];
   var customersCache = [];
   var suppliersCache = [];
@@ -380,7 +470,7 @@
     }
   }
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 5 من 10 */
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 7 من 10 */
   // ========== المواد ==========
   async function loadItems() {
     itemsCache = await apiCall('/items', 'GET');
@@ -472,7 +562,6 @@
     };
   };
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 6 من 10 */
   async function getOrCreateUnit(name) {
     if (!name) return null;
     var existing = unitsCache.find(function(u) {
@@ -550,6 +639,7 @@
     modal.element.querySelector('#fm-unit2-factor').addEventListener('input', updateQty);
     modal.element.querySelector('#fm-unit3-factor').addEventListener('input', updateQty);
 
+    // إصلاح خطأ row not defined - تم تعريف المتغير مسبقًا
     modal.element.querySelector('#btn-quick-cat').onclick = function() {
       var row = modal.element.querySelector('#quick-cat-row');
       if (row.style.display === 'none') {
@@ -638,7 +728,6 @@
     };
   }
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 7 من 10 */
   function showEditItemModal(id) {
     var item = itemsCache.find(function(i) { return i.id == id; });
     if (!item) return;
@@ -693,6 +782,7 @@
     };
   }
 
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 8 من 10 */
   // ========== الأقسام العامة (عملاء، موردين، تصنيفات) ==========
   async function loadGenericSection(endpoint, cacheKey) {
     var data = await apiCall(endpoint, 'GET');
@@ -759,7 +849,6 @@
     };
   }
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 8 من 10 */
   // ========== المستمع العام لأزرار الإضافة والتعديل والحذف ==========
   document.addEventListener('click', async function(e) {
     var t = e.target.closest('button');
@@ -820,61 +909,106 @@
       } else {
         var caches2 = { customers: customersCache, suppliers: suppliersCache, categories: categoriesCache };
         var item2 = caches2[type3]?.find(function(x) { return x.id === id3; });
-        if (!item2 || !(await confirmDialog('حذف ' + item2.name + '؟'))) return;
+        if (!item2) return;
+        var confirmMsg = 'حذف ' + item2.name + '؟';
+        if (!(await confirmDialog(confirmMsg))) return;
         var delUrls = {
           customers: '/customers?id=' + id3,
           suppliers: '/suppliers?id=' + id3,
           categories: '/definitions?type=category&id=' + id3
         };
-        await apiCall(delUrls[type3], 'DELETE');
-        showToast('تم الحذف', 'success');
-        if (type3 === 'categories') loadGenericSection('/definitions?type=category', 'categories');
-        else loadGenericSection('/' + type3, type3);
+        try {
+          await apiCall(delUrls[type3], 'DELETE');
+          showToast('تم الحذف', 'success');
+          if (type3 === 'categories') loadGenericSection('/definitions?type=category', 'categories');
+          else loadGenericSection('/' + type3, type3);
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       }
     }
   });
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 9 من 10 */
-  // ========== فاتورة (بيع / شراء) ==========
-  async function showInvoiceModal(type) {
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 9 من 10 */
+  // ========== فاتورة (بيع / شراء) مع دعم التعديل ==========
+  async function showInvoiceModal(type, editData) {
     try {
       customersCache = await apiCall('/customers', 'GET');
       suppliersCache = await apiCall('/suppliers', 'GET');
       itemsCache = await apiCall('/items', 'GET');
       unitsCache = await apiCall('/definitions?type=unit', 'GET');
 
+      var isEdit = editData && editData.id;
+      var invId = isEdit ? editData.id : null;
+      var oldLines = isEdit ? editData.invoice_lines || [] : [];
+
       var entOpts = type === 'sale'
-        ? '<option value="cash">عميل نقدي</option>' + customersCache.map(function(c) { return '<option value="' + c.id + '">' + c.name + '</option>'; }).join('')
-        : '<option value="cash">مورد نقدي</option>' + suppliersCache.map(function(s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
+        ? '<option value="cash">عميل نقدي</option>' + customersCache.map(function(c) { return '<option value="' + c.id + '"' + (isEdit && editData.customer_id == c.id ? ' selected' : '') + '>' + c.name + '</option>'; }).join('')
+        : '<option value="cash">مورد نقدي</option>' + suppliersCache.map(function(s) { return '<option value="' + s.id + '"' + (isEdit && editData.supplier_id == s.id ? ' selected' : '') + '>' + s.name + '</option>'; }).join('');
+
+      var linesHtml = '';
+      if (isEdit && oldLines.length) {
+        for (var li = 0; li < oldLines.length; li++) {
+          linesHtml += generateLineRowHtml(oldLines[li], type === 'sale');
+        }
+      } else {
+        linesHtml += generateLineRowHtml(null, type === 'sale');
+      }
 
       var body =
         '<input type="hidden" id="inv-type" value="' + type + '">' +
-        '<div class="invoice-lines" id="inv-lines">' +
-          '<div class="line-row">' +
-            '<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>' + itemsCache.map(function(i) { return '<option value="' + i.id + '" data-price="' + (type === 'sale' ? i.selling_price : i.purchase_price) + '">' + i.name + '</option>'; }).join('') + '</select></div>' +
-            '<div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>' +
-            '<div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>' +
-            '<div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>' +
-            '<div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>' +
-          '</div>' +
-        '</div>' +
+        (isEdit ? '<input type="hidden" id="inv-id" value="' + invId + '">' : '') +
+        '<div class="invoice-lines" id="inv-lines">' + linesHtml + '</div>' +
         '<button class="btn btn-secondary btn-sm" id="btn-add-line" style="width:auto;margin-bottom:16px;">' + ICONS.plus + ' إضافة بند</button>' +
         '<div class="form-group"><label class="form-label">' + (type === 'sale' ? 'العميل' : 'المورد') + '</label><select class="select" id="inv-entity">' + entOpts + '</select></div>' +
-        '<div class="form-group"><label class="form-label">التاريخ</label><input type="date" class="input" id="inv-date" value="' + new Date().toISOString().split('T')[0] + '"></div>' +
-        '<div class="form-group"><label class="form-label">الرقم المرجعي</label><input type="text" class="input" id="inv-ref" placeholder="رقم الفاتورة أو المرجع"></div>' +
-        '<div class="form-group"><label class="form-label">ملاحظات</label><textarea class="textarea" id="inv-notes" placeholder="أي ملاحظات إضافية..."></textarea></div>' +
+        '<div class="form-group"><label class="form-label">التاريخ</label><input type="date" class="input" id="inv-date" value="' + (isEdit ? editData.date : new Date().toISOString().split('T')[0]) + '"></div>' +
+        '<div class="form-group"><label class="form-label">الرقم المرجعي</label><input type="text" class="input" id="inv-ref" placeholder="رقم الفاتورة أو المرجع" value="' + (isEdit ? (editData.reference || '') : '') + '"></div>' +
+        '<div class="form-group"><label class="form-label">ملاحظات</label><textarea class="textarea" id="inv-notes" placeholder="أي ملاحظات إضافية...">' + (isEdit ? (editData.notes || '') : '') + '</textarea></div>' +
         '<div style="background:var(--bg);border-radius:12px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
           '<div class="form-group" style="margin:0;"><label class="form-label">المبلغ المدفوع</label><input type="number" step="0.01" class="input" id="inv-paid" placeholder="0.00" value="0"></div>' +
           '<div class="form-group" style="margin:0;"><label class="form-label">الإجمالي</label><div id="inv-grand-total" style="font-size:22px;font-weight:900;color:var(--primary);padding:8px 0;">0.00</div></div>' +
         '</div>';
 
       var modal = openModal({
-        title: 'فاتورة ' + (type === 'sale' ? 'مبيعات' : 'مشتريات'),
+        title: (isEdit ? 'تعديل ' : '') + 'فاتورة ' + (type === 'sale' ? 'مبيعات' : 'مشتريات'),
         bodyHTML: body,
         footerHTML: '<button class="btn btn-secondary" id="inv-cancel">إلغاء</button><button class="btn btn-primary" id="inv-save">' + ICONS.check + ' حفظ الفاتورة</button>'
       });
 
       var container = modal.element;
+
+      // دوال مساعدة
+      function generateLineRowHtml(lineData, isSale) {
+        var selectedItemId = lineData ? lineData.item_id : '';
+        var qty = lineData ? lineData.quantity : '';
+        var price = lineData ? lineData.unit_price : '';
+        var total = lineData ? lineData.total : '';
+        var unitId = lineData ? lineData.unit_id : '';
+        var itemOptions = itemsCache.map(function(i) {
+          return '<option value="' + i.id + '"' + (i.id == selectedItemId ? ' selected' : '') + '>' + i.name + '</option>';
+        }).join('');
+        return '<div class="line-row">' +
+          '<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>' + itemOptions + '</select></div>' +
+          '<div class="form-group"><select class="select unit-select">' + (selectedItemId ? getUnitOptionsForItem(selectedItemId, unitId) : '<option value="">الوحدة</option>') + '</select></div>' +
+          '<div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية" value="' + qty + '"></div>' +
+          '<div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر" value="' + price + '"></div>' +
+          '<div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;" value="' + total + '"></div>' +
+          '<button class="line-remove">' + ICONS.trash + '</button>' +
+        '</div>';
+      }
+
+      function getUnitOptionsForItem(itemId, selectedUnitId) {
+        var item = itemsCache.find(function(i) { return i.id == itemId; });
+        if (!item) return '<option value="">اختر مادة</option>';
+        var baseUnit = unitsCache.find(function(u) { return u.id == item.base_unit_id; }) || {};
+        var baseName = baseUnit.name || 'قطعة';
+        var opts = '<option value="" data-factor="1"' + (!selectedUnitId ? ' selected' : '') + '>' + baseName + ' (أساسية)</option>';
+        (item.item_units || []).forEach(function(iu) {
+          var unit = unitsCache.find(function(u) { return u.id == iu.unit_id; }) || {};
+          opts += '<option value="' + iu.unit_id + '" data-factor="' + iu.conversion_factor + '"' + (iu.unit_id == selectedUnitId ? ' selected' : '') + '>' + (unit.name || unit.abbreviation || 'وحدة') + ' (×' + iu.conversion_factor + ')</option>';
+        });
+        return opts;
+      }
 
       var updateGrandTotal = function() {
         var total = 0;
@@ -891,18 +1025,6 @@
         return found;
       }
 
-      function getUnitOptions(item) {
-        if (!item) return '<option value="">اختر مادة</option>';
-        var baseUnit = unitsCache.find(function(u) { return u.id == item.base_unit_id; }) || {};
-        var baseName = baseUnit.name || 'قطعة';
-        var opts = '<option value="" data-factor="1">' + baseName + ' (أساسية)</option>';
-        (item.item_units || []).forEach(function(iu) {
-          var unit = unitsCache.find(function(u) { return u.id == iu.unit_id; }) || {};
-          opts += '<option value="' + iu.unit_id + '" data-factor="' + iu.conversion_factor + '">' + (unit.name || unit.abbreviation || 'وحدة') + ' (×' + iu.conversion_factor + ')</option>';
-        });
-        return opts;
-      }
-
       function autoFill(selectEl, priceEl, unitSelectEl) {
         var itemId = selectEl.value;
         if (!itemId) {
@@ -915,7 +1037,7 @@
           var basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
           priceEl.value = basePrice;
           if (unitSelectEl) {
-            unitSelectEl.innerHTML = getUnitOptions(item);
+            unitSelectEl.innerHTML = getUnitOptionsForItem(itemId, null);
             unitSelectEl.style.display = 'block';
             unitSelectEl.dataset.basePrice = basePrice;
           }
@@ -949,7 +1071,11 @@
         calcRow(row);
       }
 
+      // ربط الأحداث للصفوف الحالية
       container.querySelectorAll('.line-row').forEach(function(row) {
+        row.querySelector('.line-remove').addEventListener('click', function() {
+          if (container.querySelectorAll('.line-row').length > 1) { row.remove(); updateGrandTotal(); }
+        });
         var sel = row.querySelector('.item-select');
         var price = row.querySelector('.price-input');
         var unitSel = row.querySelector('.unit-select');
@@ -957,10 +1083,7 @@
         sel?.addEventListener('change', function() {
           if (isDup(this.value, this.closest('.line-row'))) {
             showToast('المادة مضافة مسبقاً', 'warning');
-            this.value = '';
-            price.value = '';
-            if (unitSel) unitSel.style.display = 'none';
-            return;
+            this.value = ''; price.value = ''; if (unitSel) unitSel.style.display = 'none'; return;
           }
           autoFill(this, price, unitSel);
         });
@@ -969,27 +1092,18 @@
         unitSel?.addEventListener('change', function() { handleUnitChange(row); });
       });
 
+      // زر إضافة بند جديد
       container.querySelector('#btn-add-line').addEventListener('click', function() {
         var linesContainer = container.querySelector('#inv-lines');
         var nl = document.createElement('div');
         nl.className = 'line-row';
-        nl.innerHTML =
-          '<div class="form-group" style="grid-column:1/-1"><select class="select item-select"><option value="">اختر مادة</option>' + itemsCache.map(function(i) { return '<option value="' + i.id + '">' + i.name + '</option>'; }).join('') + '</select></div>' +
-          '<div class="form-group"><select class="select unit-select" style="display:none;"><option value="">الوحدة</option></select></div>' +
-          '<div class="form-group"><input type="number" step="any" class="input qty-input" placeholder="الكمية"></div>' +
-          '<div class="form-group"><input type="number" step="0.01" class="input price-input" placeholder="السعر"></div>' +
-          '<div class="form-group"><input type="number" step="0.01" class="input total-input" placeholder="الإجمالي" readonly style="background:var(--bg);font-weight:700;"></div>' +
-          '<button class="line-remove">' + ICONS.trash + '</button>';
+        nl.innerHTML = generateLineRowHtml(null, type === 'sale');
         linesContainer.appendChild(nl);
-
         var newSel = nl.querySelector('.item-select');
         var newPrice = nl.querySelector('.price-input');
         var newUnit = nl.querySelector('.unit-select');
         newSel.addEventListener('change', function() {
-          if (isDup(this.value, this.closest('.line-row'))) {
-            showToast('المادة مضافة مسبقاً', 'warning');
-            this.value = ''; newPrice.value = ''; if (newUnit) newUnit.style.display = 'none'; return;
-          }
+          if (isDup(this.value, nl)) { showToast('المادة مضافة مسبقاً', 'warning'); this.value = ''; newPrice.value = ''; if (newUnit) newUnit.style.display = 'none'; return; }
           autoFill(this, newPrice, newUnit);
         });
         nl.querySelector('.qty-input').addEventListener('input', function() { calcRow(nl); });
@@ -999,6 +1113,9 @@
           if (linesContainer.querySelectorAll('.line-row').length > 1) { nl.remove(); updateGrandTotal(); }
         });
       });
+
+      // تحديث الإجمالي أول مرة
+      updateGrandTotal();
 
       // حفظ الفاتورة
       modal.element.querySelector('#inv-save').onclick = async function() {
@@ -1035,7 +1152,7 @@
         var btn = container.querySelector('#inv-save');
         btn.disabled = true; btn.innerHTML = '<span class="loader-inline"></span> جاري الحفظ...';
         try {
-          await apiCall('/invoices', 'POST', {
+          var payload = {
             type: type,
             customer_id: type === 'sale' && container.querySelector('#inv-entity').value !== 'cash' ? container.querySelector('#inv-entity').value : null,
             supplier_id: type === 'purchase' && container.querySelector('#inv-entity').value !== 'cash' ? container.querySelector('#inv-entity').value : null,
@@ -1045,9 +1162,14 @@
             lines: lines,
             total: lines.reduce(function(s, l) { return s + l.total; }, 0),
             paid_amount: parseFloat(container.querySelector('#inv-paid').value) || 0
-          });
+          };
+          if (isEdit) {
+            await apiCall('/invoices?id=' + invId, 'PUT', Object.assign({ id: invId }, payload));
+          } else {
+            await apiCall('/invoices', 'POST', payload);
+          }
           modal.close();
-          showToast('تم حفظ الفاتورة بنجاح', 'success');
+          showToast(isEdit ? 'تم تعديل الفاتورة بنجاح' : 'تم حفظ الفاتورة بنجاح', 'success');
           loadInvoices();
         } catch (e) {
           showToast(e.message, 'error');
@@ -1095,9 +1217,10 @@
             '<span style="font-weight:900;">' + formatNumber(inv.total) + '</span>' +
           '</div>' +
           '<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">' + formatDate(inv.date) + ' · مدفوع: ' + formatNumber(inv.paid || 0) + ' · باقي: ' + formatNumber(inv.balance || 0) + '</div>' +
-          '<div style="display:flex;gap:8px;">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
             '<button class="btn btn-secondary btn-sm view-inv-btn" data-id="' + inv.id + '">' + ICONS.file + ' عرض</button>' +
             '<button class="btn btn-primary btn-sm print-inv-btn" data-id="' + inv.id + '">' + ICONS.print + ' طباعة</button>' +
+            '<button class="btn btn-warning btn-sm edit-inv-btn" data-id="' + inv.id + '">' + ICONS.edit + ' تعديل</button>' +
             '<button class="btn btn-danger btn-sm delete-inv-btn" data-id="' + inv.id + '">' + ICONS.trash + ' حذف</button>' +
           '</div>' +
         '</div>';
@@ -1105,19 +1228,26 @@
     container.innerHTML = html;
 
     container.querySelectorAll('.view-inv-btn').forEach(function(b) {
-      b.addEventListener('click', function(e) {
+      b.addEventListener('click', function() {
         var inv = invoicesCache.find(function(i) { return i.id == parseInt(b.dataset.id); });
         if (inv) showInvoiceDetail(inv);
       });
     });
     container.querySelectorAll('.print-inv-btn').forEach(function(b) {
-      b.addEventListener('click', function(e) {
+      b.addEventListener('click', function() {
         var inv = invoicesCache.find(function(i) { return i.id == parseInt(b.dataset.id); });
         if (inv) window.printInvoice(inv, { preview: true, format: 'thermal' });
       });
     });
+    container.querySelectorAll('.edit-inv-btn').forEach(function(b) {
+      b.addEventListener('click', async function() {
+        var invId = parseInt(b.dataset.id);
+        var inv = invoicesCache.find(function(i) { return i.id == invId; });
+        if (inv) showInvoiceModal(inv.type, inv);
+      });
+    });
     container.querySelectorAll('.delete-inv-btn').forEach(function(b) {
-      b.addEventListener('click', async function(e) {
+      b.addEventListener('click', async function() {
         if (await confirmDialog('حذف الفاتورة؟')) {
           await apiCall('/invoices?id=' + b.dataset.id, 'DELETE');
           loadInvoices();
@@ -1184,7 +1314,7 @@
     setTimeout(function() { w.print(); }, 500);
   };
 
-/* الراجحي للمحاسبة - Offline PWA - الجزء 10 من 10 */
+/* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 10 من 10 */
   // ========== الدفعات ==========
   async function loadPayments() {
     var payments = await apiCall('/payments', 'GET');
@@ -1405,7 +1535,7 @@
     };
   }
 
-  // ========== لوحة التحكم ==========
+  // ========== لوحة التحكم (مع مخطط شهري) ==========
   async function loadDashboard() {
     var invoices = await apiCall('/invoices', 'GET');
     var totalSales = invoices.filter(function(i) { return i.type === 'sale'; }).reduce(function(s, i) { return s + i.total; }, 0);
@@ -1413,6 +1543,26 @@
     var expenses = await apiCall('/expenses', 'GET');
     var totalExpenses = expenses.reduce(function(s, e) { return s + (e.amount || 0); }, 0);
     var net = totalSales - totalPurchases - totalExpenses;
+
+    // تجهيز المخطط الشهري (اخر 6 أشهر)
+    var monthly = {};
+    var months = [];
+    for (var m = 5; m >= 0; m--) {
+      var d = new Date();
+      d.setMonth(d.getMonth() - m);
+      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      months.push(key);
+      monthly[key] = { sales: 0, purchases: 0 };
+    }
+    invoices.forEach(function(inv) {
+      if (!inv.date) return;
+      var k = inv.date.substring(0, 7);
+      if (monthly[k]) {
+        if (inv.type === 'sale') monthly[k].sales += inv.total;
+        else if (inv.type === 'purchase') monthly[k].purchases += inv.total;
+      }
+    });
+
     var tc = document.getElementById('tab-content');
     tc.innerHTML =
       '<div class="stats-grid">' +
@@ -1421,12 +1571,40 @@
         '<div class="stat-card receivables"><div class="stat-label">المشتريات</div><div class="stat-value">' + formatNumber(totalPurchases) + '</div></div>' +
         '<div class="stat-card payables"><div class="stat-label">المصاريف</div><div class="stat-value">' + formatNumber(totalExpenses) + '</div></div>' +
       '</div>' +
+      '<div class="chart-card">' +
+        '<div class="chart-title">المبيعات والمشتريات الشهرية (آخر 6 أشهر)</div>' +
+        '<canvas id="monthlyChart" style="max-height:250px;"></canvas>' +
+      '</div>' +
       '<div class="card">' +
         '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
           '<button class="btn btn-primary" id="btn-export"><span style="display:flex;align-items:center;gap:6px;">📤 تصدير البيانات</span></button>' +
           '<button class="btn btn-secondary" id="btn-import"><span style="display:flex;align-items:center;gap:6px;">📥 استيراد البيانات</span></button>' +
         '</div>' +
       '</div>';
+
+    // رسم المخطط
+    var ctx = document.getElementById('monthlyChart')?.getContext('2d');
+    if (ctx) {
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: months,
+          datasets: [
+            { label: 'المبيعات', data: months.map(function(m) { return monthly[m].sales; }), backgroundColor: '#10b981', borderRadius: 6 },
+            { label: 'المشتريات', data: months.map(function(m) { return monthly[m].purchases; }), backgroundColor: '#f59e0b', borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+            x: { grid: { display: false } }
+          },
+          plugins: { legend: { labels: { font: { family: 'Tajawal' } } } }
+        }
+      });
+    }
+
     document.getElementById('btn-export').onclick = showExportDialog;
     document.getElementById('btn-import').onclick = function() {
       var inp = document.createElement('input');
@@ -1660,7 +1838,7 @@
     });
   });
   document.getElementById('btn-help').addEventListener('click', function() {
-    openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' });
+    openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline PWA v2.0</p>' });
   });
 
   // ========== بدء التطبيق ==========
