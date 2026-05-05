@@ -109,5 +109,38 @@
     }, 6000);
   </script>
   <script src="app.js"></script>
+<script>
+  (function() {
+    var loader = document.getElementById('loading-screen');
+    var errorScreen = document.getElementById('error-screen');
+    var errorDetails = document.getElementById('error-details');
+
+    // اعتراض الأخطاء التي تحدث قبل تفعيل window.onerror
+    window.addEventListener('error', function(e) {
+      if (!window.errors) window.errors = [];
+      window.errors.push(e.message || 'خطأ غير معروف');
+    }, true);
+
+    setTimeout(function() {
+      if (loader && !loader.classList.contains('hidden')) {
+        loader.style.display = 'none';
+        errorScreen.style.display = 'flex';
+        if (window.errors && window.errors.length) {
+          errorDetails.textContent = window.errors.join('\n\n');
+        } else {
+          // فحص إن كانت المكتبات مفقودة
+          var missing = [];
+          if (typeof Dexie === 'undefined') missing.push('Dexie.js');
+          if (typeof Chart === 'undefined') missing.push('Chart.js');
+          if (missing.length) {
+            errorDetails.textContent = 'المكتبات التالية لم تُحمَّل: ' + missing.join('، ') + '. تأكد من وجودها محلياً.';
+          } else {
+            errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحدث الصفحة.';
+          }
+        }
+      }
+    }, 6000);
+  })();
+</script>
 </body>
 </html>
