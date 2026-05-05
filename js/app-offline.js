@@ -1,8 +1,14 @@
 (function() {
   'use strict';
 
-  // ===== سجل التتبع المرئي (ينشئ الحاوية تلقائياً) =====
+  // ===== سجل تتبع آمن (يتعامل مع غياب body) =====
+  var debugMessages = [];
   function debugLog(msg) {
+    // إذا body غير موجود، خزن الرسالة لاحقاً
+    if (!document.body) {
+      debugMessages.push(msg);
+      return;
+    }
     // إنشاء الحاوية إن لم تكن موجودة
     var el = document.getElementById('debug-log');
     if (!el) {
@@ -10,6 +16,12 @@
       el.id = 'debug-log';
       el.style.cssText = 'position:fixed; bottom:80px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace;';
       document.body.appendChild(el);
+      // إظهار الرسائل المخزنة
+      if (debugMessages.length) {
+        el.textContent = debugMessages.join('\n') + '\n';
+        debugMessages = [];
+        el.scrollTop = el.scrollHeight;
+      }
     }
     el.textContent += msg + '\n';
     el.scrollTop = el.scrollHeight;
