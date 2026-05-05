@@ -11,6 +11,7 @@
     wallet: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><path d="M16 10a4 4 0 0 1-4 4"/></svg>',
     dollar: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
     fileText: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    download: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
     chart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
     check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>',
     x: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
@@ -318,26 +319,64 @@ function showAddItemModal(){
   };
 }
 
-function showEditItemModal(id){
-  const item=itemsCache.find(i=>i.id==id); if(!item) return;
-  const baseUnit=unitsCache.find(u=>u.id==item.base_unit_id)||{};
-  const catOpts=categoriesCache.map(c=>`<option value="${c.id}" ${c.id==item.category_id?'selected':''}>${c.name}</option>`).join('');
-  const body=`<div class="form-group"><label class="form-label">الاسم</label><input class="input" id="fm-name" value="${item.name}"></div>
-  <div class="form-group"><label class="form-label">التصنيف</label><select class="select" id="fm-category_id"><option value="">بدون تصنيف</option>${catOpts}</select></div>
-  <div class="form-group"><label class="form-label">الوحدة الأساسية</label><input class="input" id="fm-baseUnit" value="${baseUnit.name||'قطعة'}"></div>
-  <div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-quantity" type="number" value="${item.quantity||0}"></div>
-  <div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" value="${item.purchase_price||0}"></div>
-  <div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" value="${item.selling_price||0}"></div>`;
-  const modal=openModal({title:'تعديل مادة',bodyHTML:body,footerHTML:`<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>`});
-  modal.element.querySelector('#fm-cancel').onclick=()=>modal.close();
-  modal.element.querySelector('#fm-save').onclick=async ()=>{
-    const baseUnitName=modal.element.querySelector('#fm-baseUnit').value.trim()||'قطعة';
-    const baseUnitId=await getOrCreateUnit(baseUnitName);
-    await apiCall('/items','PUT',{id,name:modal.element.querySelector('#fm-name').value.trim(),category_id:modal.element.querySelector('#fm-category_id').value||null,base_unit_id:baseUnitId,quantity:parseFloat(modal.element.querySelector('#fm-quantity').value)||0,purchase_price:parseFloat(modal.element.querySelector('#fm-purchase').value)||0,selling_price:parseFloat(modal.element.querySelector('#fm-selling').value)||0});
-    modal.close(); showToast('تم التعديل','success'); loadItems();
-  };
-}
+function showEditItemModal(id) {
+  const item = itemsCache.find(i => i.id == id);
+  if (!item) return;
 
+  const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
+  const baseUnitName = baseUnit.name || 'قطعة';
+  const catOpts = categoriesCache.map(c => `<option value="${c.id}" ${c.id == item.category_id ? 'selected' : ''}>${c.name}</option>`).join('');
+
+  const body = `
+    <div class="form-group"><label class="form-label">الاسم</label><input class="input" id="fm-name" value="${item.name}"></div>
+    <div class="form-group"><label class="form-label">التصنيف</label><select class="select" id="fm-category_id"><option value="">بدون تصنيف</option>${catOpts}</select></div>
+    <div class="form-group"><label class="form-label">الوحدة الأساسية</label><div style="display:flex;gap:8px;align-items:center;"><input class="input" id="fm-baseUnit" value="${baseUnitName}" style="flex:1;"><button class="btn btn-secondary" id="btn-toggle-units" type="button" style="width:auto;padding:8px 14px;">${ICONS.plus}</button></div></div>
+    <div id="extra-units" style="display:none;"></div>
+    <div class="form-group"><label class="form-label">الكمية</label><input class="input" id="fm-quantity" type="number" value="${item.quantity || 0}"></div>
+    <div class="form-group"><label class="form-label">سعر الشراء</label><input class="input" id="fm-purchase" type="number" value="${item.purchase_price || 0}"></div>
+    <div class="form-group"><label class="form-label">سعر البيع</label><input class="input" id="fm-selling" type="number" value="${item.selling_price || 0}"></div>
+  `;
+
+  const modal = openModal({ title: 'تعديل مادة', bodyHTML: body, footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>` });
+
+  // ربط زر الإلغاء
+  modal.element.querySelector('#fm-cancel').addEventListener('click', () => modal.close());
+
+  // ربط زر الحفظ
+  modal.element.querySelector('#fm-save').addEventListener('click', async () => {
+    const btn = modal.element.querySelector('#fm-save');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ جاري الحفظ...';
+
+    try {
+      const baseUnitNameInput = modal.element.querySelector('#fm-baseUnit');
+      const baseUnitName = baseUnitNameInput ? baseUnitNameInput.value.trim() : 'قطعة';
+      const baseUnitId = await getOrCreateUnit(baseUnitName);
+
+      const values = {
+        id: id,
+        name: modal.element.querySelector('#fm-name').value.trim(),
+        category_id: modal.element.querySelector('#fm-category_id').value || null,
+        base_unit_id: baseUnitId,
+        quantity: parseFloat(modal.element.querySelector('#fm-quantity').value) || 0,
+        purchase_price: parseFloat(modal.element.querySelector('#fm-purchase').value) || 0,
+        selling_price: parseFloat(modal.element.querySelector('#fm-selling').value) || 0
+      };
+
+      if (!values.name) throw new Error('اسم المادة مطلوب');
+
+      await apiCall('/items', 'PUT', values);
+      modal.close();
+      showToast('تم التعديل بنجاح', 'success');
+      loadItems();
+    } catch (e) {
+      showToast(e.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${ICONS.check} حفظ`;
+    }
+  });
+}
 // ===== أقسام عامة (عملاء، موردين، تصنيفات) =====
 async function loadGenericSection(endpoint,cacheKey){
   const data=await apiCall(endpoint,'GET');
@@ -729,9 +768,9 @@ async function loadDashboard(){
   };
 }
 
-// ===== تصدير البيانات مع معاينة =====
+// ===== تصدير البيانات مع خيار تحديد المسار =====
 async function showExportDialog() {
-  // جمع الإحصائيات أولاً
+  // جمع الإحصائيات
   const stats = {};
   const tables = ['items','customers','suppliers','categories','units','invoices','invoiceLines','payments','expenses'];
   const names = {
@@ -745,46 +784,75 @@ async function showExportDialog() {
     stats[t] = { count: data.length, name: names[t] || t };
   }
 
-  const statsHTML = tables.map(t => 
+  const statsHTML = tables.map(t =>
     `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
       <span>${stats[t].name}</span>
       <span style="font-weight:700;">${stats[t].count} سجل</span>
     </div>`
   ).join('');
 
+  // تحقق من دعم File System Access API
+  const supportsFilePicker = 'showSaveFilePicker' in window;
+
   const modal = openModal({
     title: 'تصدير البيانات',
     bodyHTML: `
-      <p style="margin-bottom:12px;color:var(--text-secondary);">سيتم تصدير جميع بياناتك إلى ملف JSON. يمكنك استخدام هذا الملف للنسخ الاحتياطي أو النقل.</p>
+      <p style="margin-bottom:12px;color:var(--text-secondary);">سيتم تصدير جميع بياناتك إلى ملف JSON.</p>
       <div style="background:var(--bg);border-radius:12px;padding:12px;margin-bottom:16px;">
         <div style="font-weight:700;margin-bottom:8px;">محتوى التصدير</div>
         ${statsHTML}
       </div>
-      <p style="font-size:13px;color:var(--text-muted);">💡 يمكنك استيراد هذا الملف لاحقاً من زر "استيراد البيانات".</p>
+      <p style="font-size:13px;color:var(--text-muted);">
+        ${supportsFilePicker ? '💡 يمكنك اختيار مكان حفظ الملف بنفسك.' : '⚠️ سيتم حفظ الملف في مجلد "التنزيلات" الافتراضي، ويمكنك نقله لاحقاً.'}
+      </p>
     `,
     footerHTML: `
       <button class="btn btn-secondary" id="exp-cancel">إلغاء</button>
-      <button class="btn btn-primary" id="exp-confirm">📥 تنزيل الملف</button>
+      <button class="btn btn-primary" id="exp-confirm">📥 بدء التصدير</button>
     `
   });
 
   modal.element.querySelector('#exp-cancel').onclick = () => modal.close();
+
   modal.element.querySelector('#exp-confirm').onclick = async () => {
     modal.close();
-    // تجميع البيانات وتنزيلها
+    // بناء محتوى الملف
     const data = {};
-    for (const t of tables) {
-      data[t] = await getTable(t).toArray();
-    }
+    for (const t of tables) data[t] = await getTable(t).toArray();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `alrajhi-backup-${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    showToast('تم تصدير البيانات بنجاح', 'success');
+    const fileName = `alrajhi-backup-${new Date().toISOString().slice(0,10)}.json`;
+
+    try {
+      if (supportsFilePicker) {
+        // استخدام File System Access API ليختار المستخدم المسار بنفسه
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'ملف JSON للنسخ الاحتياطي',
+            accept: { 'application/json': ['.json'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast(`✅ تم حفظ الملف بنجاح في الموقع الذي اخترته.`, 'success');
+      } else {
+        // الرجوع إلى التنزيل التقليدي
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        a.click();
+        showToast(`✅ تم تنزيل الملف "${fileName}" إلى مجلد التنزيلات.`, 'success');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // المستخدم ألغى الاختيار، لا نفعل شيئًا
+      } else {
+        showToast('❌ فشل التصدير: ' + err.message, 'error');
+      }
+    }
   };
 }
-
 // ===== استيراد البيانات مع معاينة =====
 async function handleImport(file) {
   if (!file) return;
