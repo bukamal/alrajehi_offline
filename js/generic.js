@@ -1,12 +1,17 @@
 import { ICONS } from './constants.js';
 import { showToast, showFormModal, confirmDialog } from './utils.js';
-import { apiCall, customersCache, suppliersCache, categoriesCache } from './db.js';
+import {
+  apiCall,
+  customersCache,
+  suppliersCache,
+  categoriesCache,
+  checkCascadeDelete,
+  db
+} from './db.js';
 
-/**
- * تحميل وعرض قسم عام (عملاء / موردين / تصنيفات)
- * @param {string} endpoint - مسار API (مثل '/customers')
- * @param {string} cacheKey - مفتاح الكاش (customers, suppliers, categories)
- */
+/* =============================================
+   تحميل وعرض قسم عام (عملاء / موردين / تصنيفات)
+   ============================================= */
 export async function loadGenericSection(endpoint, cacheKey) {
   const data = await apiCall(endpoint, 'GET');
 
@@ -56,15 +61,14 @@ export async function loadGenericSection(endpoint, cacheKey) {
   tc.innerHTML = html;
 }
 
-/**
- * المستمع العالمي الموحد لأزرار الإضافة/التعديل/الحذف
- * (يعمل على كامل الصفحة)
- */
+/* =============================================
+   المستمع العالمي الموحد لأزرار add/edit/delete
+   ============================================= */
 document.addEventListener('click', async e => {
   const t = e.target.closest('button');
   if (!t) return;
 
-  // زر الإضافة (في أقسام العملاء والموردين والتصنيفات)
+  // ----- زر الإضافة (عملاء / موردين / تصنيفات) -----
   if (t.classList.contains('add-btn')) {
     const type = t.dataset.type;
     const titles = { customers: 'عميل', suppliers: 'مورد', categories: 'تصنيف' };
@@ -89,17 +93,14 @@ document.addEventListener('click', async e => {
     });
   }
 
-  // زر التعديل
+  // ----- زر التعديل -----
   else if (t.classList.contains('edit-btn')) {
     const type = t.dataset.type;
     const id = parseInt(t.dataset.id);
     if (!id) return;
 
-    // حالات خاصة للوحدات (تُعالج في ملف units.js)
-    if (type === 'units') {
-      // سيتم استدعاء showEditUnitModal من units.js، لكن المستمع هناك أيضًا
-      return;
-    }
+    // الوحدات تُعالج في units.js
+    if (type === 'units') return;
 
     const caches = {
       customers: customersCache,
@@ -130,26 +131,59 @@ document.addEventListener('click', async e => {
     });
   }
 
-  // زر الحذف
+  // ----- زر الحذف (مع فحص العلاقات) -----
   else if (t.classList.contains('delete-btn')) {
     const type = t.dataset.type;
     const id = parseInt(t.dataset.id);
     if (!id) return;
 
-    // حالات خاصة للوحدات
-    if (type === 'units') {
-      const { deleteUnit } = await import('./units.js');
-      return deleteUnit(id);
+    // الوحدات تُعالج في units.js (يوجد مستمع مستقل هناك)
+    if (type === 'units') return;
+
+    const name = (() => {
+      const caches = {
+        customers: customersCache,
+        suppliers: suppliersCache,
+        categories: categoriesCache
+      };
+      const item = caches[type]?.find(x => x.id === id);
+      return item ? item.name : '';
+    })();
+
+    if (!name) return;
+
+    // ---- فحص العلاقات ----
+    const { counts } = await checkCascadeDelete(type, id);
+
+    // 1) العملاء والموردين: لا يمكن حذفهم إذا كان لديهم فواتير أو دفعات
+    if (type === 'customers' || type === 'suppliers') {
+      if (counts.invoices > 0 || counts.payments > 0) {
+        showToast(
+          `لا يمكن حذف "${name}" لأنه مرتبط بـ ${counts.invoices || 0} فاتورة و ${counts.payments || 0} دفعة. قم بحذف الفواتير والدفعات أولاً.`,
+          'error'
+        );
+        return;
+      }
     }
 
-    const caches = {
-      customers: customersCache,
-      suppliers: suppliersCache,
-      categories: categoriesCache
-    };
-    const item = caches[type]?.find(x => x.id === id);
-    if (!item) return;
-    if (!(await confirmDialog(`حذف ${item.name}؟`))) return;
+    // 2) التصنيفات: نسمح بالحذف مع تعيين تصنيف المواد المرتبطة إلى null
+    if (type === 'categories' && counts.items > 0) {
+      const proceed = await confirmDialog(
+        `التصنيف "${name}" يحتوي على ${counts.items} مادة.\nإذا تابعت، سيتم إزالة التصنيف من هذه المواد. متابعة؟`
+      );
+      if (!proceed) return;
+
+      await db.transaction('rw', db.items, db.categories, async () => {
+        await db.items.where({ category_id: id }).modify({ category_id: null });
+        await db.categories.delete(id);
+      });
+      showToast('تم حذف التصنيف وإزالته من المواد.', 'success');
+      loadGenericSection('/definitions?type=category', 'categories');
+      return;
+    }
+
+    // إذا لم تكن هناك عوائق نطلب تأكيداً عادياً
+    if (!(await confirmDialog(`حذف "${name}"؟`))) return;
 
     const delUrls = {
       customers: `/customers?id=${id}`,

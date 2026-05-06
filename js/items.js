@@ -11,14 +11,14 @@ import {
   apiCall,
   itemsCache,
   unitsCache,
-  categoriesCache
+  categoriesCache,
+  checkCascadeDelete
 } from './db.js';
 
 /**
  * تحميل وعرض قائمة المواد في المحتوى الرئيسي
  */
 export async function loadItems() {
-  // تحديث الكاش (تفريغه وإعادة تعبئته)
   itemsCache.length = 0;
   const data = await apiCall('/items', 'GET');
   itemsCache.push(...data);
@@ -128,13 +128,25 @@ window.showItemDetail = function (itemId) {
     modal.close();
     setTimeout(() => showEditItemModal(itemId), 200);
   };
-  modal.element.querySelector('#delete-item-btn').onclick = () => {
+
+  // --------------- حذف المادة (مع فحص العلاقات) ---------------
+  modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
-      if (await confirmDialog('حذف المادة؟')) {
-        await apiCall('/items?id=' + itemId, 'DELETE');
-        loadItems();
+      // فحص العلاقات قبل الحذف
+      const { counts } = await checkCascadeDelete('items', itemId);
+      if (counts.invoiceLines > 0) {
+        showToast(
+          `لا يمكن حذف المادة "${item.name}" لأنها مرتبطة بـ ${counts.invoiceLines} بند في الفواتير.`,
+          'error'
+        );
+        return;
       }
+
+      if (!(await confirmDialog(`حذف المادة "${item.name}"؟`))) return;
+      await apiCall('/items?id=' + itemId, 'DELETE');
+      showToast('تم الحذف', 'success');
+      loadItems();
     }, 200);
   };
 };

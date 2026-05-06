@@ -365,9 +365,10 @@ export function renderFilteredInvoices() {
   });
   container.querySelectorAll('.delete-inv-btn').forEach(b => {
     b.addEventListener('click', async () => {
-      if (await confirmDialog('حذف الفاتورة؟')) {
-        await apiCall('/invoices?id=' + b.dataset.id, 'DELETE');
-        loadInvoices();
+      const invId = parseInt(b.dataset.id);
+      if (await confirmDialog('حذف الفاتورة؟ سيتم إعادة المخزون وتعديل الأرصدة.')) {
+        await deleteInvoice(invId);
+        renderFilteredInvoices();
       }
     });
   });
@@ -421,3 +422,67 @@ window.printInvoice = function (invoice, options = {}) {
   w.document.close();
   setTimeout(() => w.print(), 500);
 };
+
+/**
+ * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
+ * @param {number} invId - معرّف الفاتورة
+ */
+async function deleteInvoice(invId) {
+  const inv = invoicesCache.find(i => i.id === invId);
+  if (!inv) return;
+
+  // الحصول على البنود والدفعات المرتبطة
+  const lines = await db.invoiceLines.where({ invoice_id: invId }).toArray();
+  const payments = await db.payments.where({ invoice_id: invId }).toArray();
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+
+  await db.transaction('rw', db.items, db.invoices, db.invoiceLines, db.payments, db.customers, db.suppliers, async () => {
+    // 1. عكس المخزون
+    for (const line of lines) {
+      if (line.item_id) {
+        const item = await db.items.get(line.item_id);
+        if (item) {
+          const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+          const newQty = inv.type === 'sale'
+            ? (item.quantity || 0) + baseQty   // بيع ملغي ← نعيد الكمية للمخزون
+            : (item.quantity || 0) - baseQty;  // شراء ملغي ← نخصم الكمية من المخزون
+          await db.items.update(item.id, { quantity: newQty });
+        }
+      }
+    }
+
+    // 2. عكس أثر الدفعات على الأرصدة
+    if (inv.customer_id && inv.type === 'sale') {
+      const customer = await db.customers.get(inv.customer_id);
+      if (customer) {
+        // عند الحذف، نلغي الدين الذي أضفناه (إجمالي الفاتورة) ونعيد الدفعات
+        await db.customers.update(inv.customer_id, {
+          balance: (customer.balance || 0) - (inv.total - totalPaid)
+        });
+      }
+    } else if (inv.supplier_id && inv.type === 'purchase') {
+      const supplier = await db.suppliers.get(inv.supplier_id);
+      if (supplier) {
+        await db.suppliers.update(inv.supplier_id, {
+          balance: (supplier.balance || 0) - (inv.total - totalPaid)
+        });
+      }
+    }
+
+    // 3. حذف الدفعات المرتبطة
+    await db.payments.where({ invoice_id: invId }).delete();
+
+    // 4. حذف البنود
+    await db.invoiceLines.where({ invoice_id: invId }).delete();
+
+    // 5. حذف الفاتورة نفسها
+    await db.invoices.delete(invId);
+  });
+
+  // تحديث الكاش المحلي (إزالة الفاتورة من invoicesCache)
+  const idx = invoicesCache.findIndex(i => i.id === invId);
+  if (idx !== -1) invoicesCache.splice(idx, 1);
+
+  // يمكن أيضاً تحديث itemsCache يدوياً لكن من الأفضل إعادة تحميلها في الصفحات الأخرى
+  // نكتفي بالإزالة من الكاش
+}
