@@ -50,9 +50,9 @@ export function renderFilteredItems() {
 
   let html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
   filtered.forEach(item => {
+    // ✅ Use loose equality for unit lookup
     const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
     const unitName = baseUnit.name || 'قطعة';
-    // ✅ FIXED: Use data attribute instead of onclick
     html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
       <td style="font-weight:700;">${item.name}</td>
       <td>${unitName}</td>
@@ -62,10 +62,9 @@ export function renderFilteredItems() {
   html += '</tbody></table></div>';
   container.innerHTML = html;
 
-  // ✅ FIXED: Add event listeners properly instead of window global
   container.querySelectorAll('.item-row').forEach(row => {
     row.addEventListener('click', () => {
-      const itemId = parseInt(row.dataset.itemId);
+      const itemId = parseInt(row.dataset.itemId, 10);
       showItemDetail(itemId);
     });
   });
@@ -81,10 +80,13 @@ export async function getOrCreateUnit(name) {
   return u.id;
 }
 
-// ✅ FIXED: Exported function instead of window global
+// ✅ FIXED: Use loose equality (==) for id comparisons inside this and nested modals
 export function showItemDetail(itemId) {
-  const item = itemsCache.find(i => i.id === itemId);
-  if (!item) return;
+  const item = itemsCache.find(i => i.id == itemId);
+  if (!item) {
+    showToast('المادة غير موجودة', 'error');
+    return;
+  }
 
   const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
   const baseName = baseUnit.name || 'قطعة';
@@ -99,6 +101,7 @@ export function showItemDetail(itemId) {
     unitsHtml += '</ul></div>';
   }
 
+  // ✅ Use loose equality for category lookup
   const categoryName = item.category_id
     ? (categoriesCache.find(c => c.id == item.category_id)?.name || '-')
     : 'بدون تصنيف';
@@ -130,20 +133,25 @@ export function showItemDetail(itemId) {
   modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
-      // فحص العلاقات قبل الحذف
-      const { counts } = await checkCascadeDelete('items', itemId);
-      if (counts.invoiceLines > 0) {
-        showToast(
-          `لا يمكن حذف المادة "${item.name}" لأنها مرتبطة بـ ${counts.invoiceLines} بند في الفواتير. قم بحذف الفواتير أولاً.`,
-          'error'
-        );
-        return;
-      }
+      // ✅ FIXED: Wrapped in try-catch
+      try {
+        const { counts } = await checkCascadeDelete('items', itemId);
+        if (counts.invoiceLines > 0) {
+          showToast(
+            `لا يمكن حذف المادة "${item.name}" لأنها مرتبطة بـ ${counts.invoiceLines} بند في الفواتير. قم بحذف الفواتير أولاً.`,
+            'error'
+          );
+          return;
+        }
 
-      if (!(await confirmDialog(`حذف المادة "${item.name}"؟`))) return;
-      await apiCall('/items?id=' + itemId, 'DELETE');
-      showToast('تم الحذف', 'success');
-      loadItems();
+        if (!(await confirmDialog(`حذف المادة "${item.name}"؟`))) return;
+        await apiCall('/items?id=' + itemId, 'DELETE');
+        showToast('تم الحذف', 'success');
+        loadItems(); // ستعيد تحميل القسم بالكامل
+      } catch (e) {
+        console.error('[Delete Item Error]', e);
+        showToast('فشل حذف المادة: ' + (e.message || 'خطأ غير معروف'), 'error');
+      }
     }, 200);
   };
 }
@@ -359,7 +367,7 @@ export function showAddItemModal() {
 }
 
 export function showEditItemModal(id) {
-  const item = itemsCache.find(i => i.id == id);
+  const item = itemsCache.find(i => i.id == id); // ✅ Use loose equality
   if (!item) return;
 
   const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
@@ -446,7 +454,7 @@ export function checkStockAvailability(lines, type) {
   if (type !== 'sale') return true;
   for (const line of lines) {
     if (!line.item_id) continue;
-    const item = itemsCache.find(i => i.id == line.item_id);
+    const item = itemsCache.find(i => i.id == line.item_id); // ✅ Use loose equality
     if (!item) continue;
     const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
     if (baseQty > (item.quantity || 0)) {

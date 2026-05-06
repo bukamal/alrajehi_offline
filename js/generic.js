@@ -96,7 +96,7 @@ document.addEventListener('click', async e => {
   // ----- زر التعديل -----
   else if (t.classList.contains('edit-btn')) {
     const type = t.dataset.type;
-    const id = parseInt(t.dataset.id);
+    const id = parseInt(t.dataset.id, 10);
     if (!id) return;
 
     // الوحدات تُعالج في units.js
@@ -107,8 +107,12 @@ document.addEventListener('click', async e => {
       suppliers: suppliersCache,
       categories: categoriesCache
     };
-    const item = caches[type]?.find(x => x.id === id);
-    if (!item) return;
+    // ✅ FIXED: Use loose equality (==) to handle both string and number ids
+    const item = caches[type]?.find(x => x.id == id);
+    if (!item) {
+      showToast('العنصر غير موجود في الكاش', 'error');
+      return;
+    }
 
     const endpoints = {
       customers: '/customers',
@@ -134,70 +138,85 @@ document.addEventListener('click', async e => {
   // ----- زر الحذف (مع فحص العلاقات) -----
   else if (t.classList.contains('delete-btn')) {
     const type = t.dataset.type;
-    const id = parseInt(t.dataset.id);
-    if (!id) return;
+    const id = parseInt(t.dataset.id, 10);
+    if (!id) {
+      showToast('معرّف غير صالح', 'error');
+      return;
+    }
 
     // الوحدات تُعالج في units.js (يوجد مستمع مستقل هناك)
     if (type === 'units') return;
 
-    const name = (() => {
-      const caches = {
-        customers: customersCache,
-        suppliers: suppliersCache,
-        categories: categoriesCache
-      };
-      const item = caches[type]?.find(x => x.id === id);
-      return item ? item.name : '';
-    })();
+    // ✅ FIXED: Wrapped entire delete flow in try-catch
+    try {
+      const name = (() => {
+        const caches = {
+          customers: customersCache,
+          suppliers: suppliersCache,
+          categories: categoriesCache
+        };
+        // ✅ FIXED: Use loose equality (==) to handle both string and number ids
+        const item = caches[type]?.find(x => x.id == id);
+        return item ? item.name : '';
+      })();
 
-    if (!name) return;
-
-    // ---- فحص العلاقات ----
-    const { counts } = await checkCascadeDelete(type, id);
-
-    // 1) العملاء والموردين: لا يمكن حذفهم إذا كان لديهم فواتير أو دفعات
-    if (type === 'customers' || type === 'suppliers') {
-      if (counts.invoices > 0 || counts.payments > 0) {
-        showToast(
-          `لا يمكن حذف "${name}" لأنه مرتبط بـ ${counts.invoices || 0} فاتورة و ${counts.payments || 0} دفعة. قم بحذف الفواتير والدفعات أولاً.`,
-          'error'
-        );
+      if (!name) {
+        showToast('العنصر غير موجود', 'error');
         return;
       }
+
+      // ---- فحص العلاقات ----
+      const { counts } = await checkCascadeDelete(type, id);
+
+      // 1) العملاء والموردين: لا يمكن حذفهم إذا كان لديهم فواتير أو دفعات
+      if (type === 'customers' || type === 'suppliers') {
+        if (counts.invoices > 0 || counts.payments > 0) {
+          showToast(
+            `لا يمكن حذف "${name}" لأنه مرتبط بـ ${counts.invoices || 0} فاتورة و ${counts.payments || 0} دفعة. قم بحذف الفواتير والدفعات أولاً.`,
+            'error'
+          );
+          return;
+        }
+      }
+
+      // 2) التصنيفات: نسمح بالحذف مع تعيين تصنيف المواد المرتبطة إلى null
+      if (type === 'categories' && counts.items > 0) {
+        const proceed = await confirmDialog(
+          `التصنيف "${name}" يحتوي على ${counts.items} مادة.\nإذا تابعت، سيتم إزالة التصنيف من هذه المواد. متابعة؟`
+        );
+        if (!proceed) return;
+
+        await db.transaction('rw', db.items, db.categories, async () => {
+          await db.items.where({ category_id: id }).modify({ category_id: null });
+          await db.categories.delete(id);
+        });
+        showToast('تم حذف التصنيف وإزالته من المواد.', 'success');
+        await loadGenericSection('/definitions?type=category', 'categories');
+        return;
+      }
+
+      // إذا لم تكن هناك عوائق نطلب تأكيداً عادياً
+      if (!(await confirmDialog(`حذف "${name}"؟`))) return;
+
+      const delUrls = {
+        customers: `/customers?id=${id}`,
+        suppliers: `/suppliers?id=${id}`,
+        categories: `/definitions?type=category&id=${id}`
+      };
+      await apiCall(delUrls[type], 'DELETE');
+      showToast('تم الحذف', 'success');
+
+      const endpoints = {
+        customers: '/customers',
+        suppliers: '/suppliers',
+        categories: '/definitions?type=category'
+      };
+      // ✅ FIXED: Await the refresh
+      await loadGenericSection(endpoints[type], type);
+      
+    } catch (err) {
+      console.error('[Delete Error]', err);
+      showToast('فشل الحذف: ' + (err.message || 'خطأ غير معروف'), 'error');
     }
-
-    // 2) التصنيفات: نسمح بالحذف مع تعيين تصنيف المواد المرتبطة إلى null
-    if (type === 'categories' && counts.items > 0) {
-      const proceed = await confirmDialog(
-        `التصنيف "${name}" يحتوي على ${counts.items} مادة.\nإذا تابعت، سيتم إزالة التصنيف من هذه المواد. متابعة؟`
-      );
-      if (!proceed) return;
-
-      await db.transaction('rw', db.items, db.categories, async () => {
-        await db.items.where({ category_id: id }).modify({ category_id: null });
-        await db.categories.delete(id);
-      });
-      showToast('تم حذف التصنيف وإزالته من المواد.', 'success');
-      loadGenericSection('/definitions?type=category', 'categories');
-      return;
-    }
-
-    // إذا لم تكن هناك عوائق نطلب تأكيداً عادياً
-    if (!(await confirmDialog(`حذف "${name}"؟`))) return;
-
-    const delUrls = {
-      customers: `/customers?id=${id}`,
-      suppliers: `/suppliers?id=${id}`,
-      categories: `/definitions?type=category&id=${id}`
-    };
-    await apiCall(delUrls[type], 'DELETE');
-    showToast('تم الحذف', 'success');
-
-    const endpoints = {
-      customers: '/customers',
-      suppliers: '/suppliers',
-      categories: '/definitions?type=category'
-    };
-    loadGenericSection(endpoints[type], type);
   }
 });

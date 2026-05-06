@@ -73,6 +73,7 @@ export async function showInvoiceModal(type) {
 
     const getUnitOptions = item => {
       if (!item) return '<option value="">اختر مادة</option>';
+      // ✅ Use loose equality for id comparison
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
       let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
@@ -89,7 +90,7 @@ export async function showInvoiceModal(type) {
       const unitSel = row.querySelector('.unit-select');
 
       sel.addEventListener('change', () => {
-        const item = itemsCache.find(i => i.id == sel.value);
+        const item = itemsCache.find(i => i.id == sel.value); // ✅ Use loose equality
         if (item) {
           const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
           if (unitSel) {
@@ -280,28 +281,34 @@ export function renderFilteredInvoices() {
 
   container.querySelectorAll('.view-inv-btn').forEach(b => {
     b.addEventListener('click', () => {
-      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id));
+      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id)); // ✅ Use loose equality
       if (inv) showInvoiceDetail(inv);
     });
   });
   container.querySelectorAll('.print-inv-btn').forEach(b => {
     b.addEventListener('click', () => {
-      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id));
+      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id)); // ✅ Use loose equality
       if (inv) printInvoice(inv, { preview: true, format: 'thermal' });
     });
   });
   container.querySelectorAll('.delete-inv-btn').forEach(b => {
     b.addEventListener('click', async () => {
       const invId = parseInt(b.dataset.id);
-      if (await confirmDialog('حذف الفاتورة؟ سيتم إعادة المخزون وتعديل الأرصدة.')) {
-        await deleteInvoice(invId);
-        renderFilteredInvoices();
+      try {
+        // ✅ Use confirmDialog and deleteInvoice with error handling
+        if (await confirmDialog('حذف الفاتورة؟ سيتم إعادة المخزون وتعديل الأرصدة.')) {
+          await deleteInvoice(invId);
+          renderFilteredInvoices();
+        }
+      } catch (e) {
+        showToast('فشل حذف الفاتورة: ' + (e.message || 'خطأ غير معروف'), 'error');
       }
     });
   });
 }
 
 export function showInvoiceDetail(inv) {
+  // ✅ Use loose equality for ids in lines lookup
   const lines = (inv.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id);
@@ -324,6 +331,7 @@ export function showInvoiceDetail(inv) {
 // ✅ FIXED: Exported function instead of window global
 export function printInvoice(invoice, options = {}) {
   const { preview = false } = options;
+  // ✅ Use loose equality for ids in lines lookup
   const linesHTML = (invoice.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id);
@@ -349,31 +357,43 @@ export function printInvoice(invoice, options = {}) {
 
 /**
  * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
- * ✅ FIXED: Now exported
+ * ✅ FIXED: Now exported with try-catch and loose equality
  */
 export async function deleteInvoice(invId) {
-  const inv = invoicesCache.find(i => i.id === invId);
-  if (!inv) return;
+  // ✅ Use loose equality to find invoice in cache
+  const inv = invoicesCache.find(i => i.id == invId);
+  if (!inv) {
+    showToast('الفاتورة غير موجودة', 'error');
+    throw new Error('Invoice not found');
+  }
 
-  const lines = await db.invoiceLines.where({ invoice_id: invId }).toArray();
-  const payments = await db.payments.where({ invoice_id: invId }).toArray();
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  try {
+    const lines = await db.invoiceLines.where({ invoice_id: invId }).toArray();
+    const payments = await db.payments.where({ invoice_id: invId }).toArray();
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
-  await db.transaction('rw', db.items, db.invoices, db.invoiceLines, db.payments, db.customers, db.suppliers, async () => {
-    await revertStockChanges(lines, inv.type);
+    await db.transaction('rw', db.items, db.invoices, db.invoiceLines, db.payments, db.customers, db.suppliers, async () => {
+      await revertStockChanges(lines, inv.type);
 
-    if (inv.customer_id && inv.type === 'sale') {
-      await updateEntityBalance('customer', inv.customer_id, -(inv.total - totalPaid));
-    } else if (inv.supplier_id && inv.type === 'purchase') {
-      await updateEntityBalance('supplier', inv.supplier_id, -(inv.total - totalPaid));
-    }
+      if (inv.customer_id && inv.type === 'sale') {
+        await updateEntityBalance('customer', inv.customer_id, -(inv.total - totalPaid));
+      } else if (inv.supplier_id && inv.type === 'purchase') {
+        await updateEntityBalance('supplier', inv.supplier_id, -(inv.total - totalPaid));
+      }
 
-    await db.payments.where({ invoice_id: invId }).delete();
-    await db.invoiceLines.where({ invoice_id: invId }).delete();
-    await db.invoices.delete(invId);
-  });
+      await db.payments.where({ invoice_id: invId }).delete();
+      await db.invoiceLines.where({ invoice_id: invId }).delete();
+      await db.invoices.delete(invId);
+    });
 
-  // تحديث الكاش
-  const idx = invoicesCache.findIndex(i => i.id === invId);
-  if (idx !== -1) invoicesCache.splice(idx, 1);
+    // تحديث الكاش
+    const idx = invoicesCache.findIndex(i => i.id == invId);
+    if (idx !== -1) invoicesCache.splice(idx, 1);
+    
+    showToast('تم حذف الفاتورة بنجاح', 'success');
+  } catch (e) {
+    console.error('[Delete Invoice Error]', e);
+    showToast('فشل حذف الفاتورة: ' + (e.message || 'خطأ غير معروف'), 'error');
+    throw e; // rethrow so caller can handle if needed
+  }
 }

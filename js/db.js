@@ -5,7 +5,7 @@ export let suppliersCache = [];
 export let invoicesCache = [];
 export let categoriesCache = [];
 export let unitsCache = [];
-export let paymentsCache = [];  // ✅ NEW: Added missing payments cache
+export let paymentsCache = [];
 
 export function initDB() {
   if (typeof Dexie === 'undefined' || !Dexie) {
@@ -39,7 +39,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   const [table, query] = endpoint.split('?');
   const params = new URLSearchParams(query || '');
   
-  // ✅ FIXED: Better id parsing - handle NaN and invalid values
   let id = null;
   const idParam = params.get('id');
   if (idParam !== null && idParam !== '') {
@@ -131,10 +130,17 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       return { id: nid, ...body };
     }
   } else if (method === 'DELETE') {
+    // ✅ FIXED: Validate id before attempting delete
+    if (!id) {
+      throw new Error('معرّف السجل مطلوب للحذف');
+    }
+    
     const tbl = table.split('?')[0].replace('/', '');
-    if (tbl === 'invoices') await getTable('invoiceLines').where({ invoice_id: id }).delete();
+    
+    if (tbl === 'invoices') {
+      await getTable('invoiceLines').where({ invoice_id: id }).delete();
+    }
 
-    // ✅ FIXED: Better handling of definitions delete
     if (tbl === 'definitions') {
       const defType = type || params.get('type');
       if (defType === 'category') await getTable('categories').delete(id);
@@ -147,7 +153,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   } else if (method === 'PUT') {
     let tbl = table.split('?')[0].replace('/', '');
     
-    // ✅ FIXED: Better recordId resolution
     let recordId = id;
     if (!recordId && body.id !== undefined && body.id !== null) {
       const parsedBodyId = parseInt(body.id, 10);
@@ -183,7 +188,7 @@ export async function refreshCaches() {
       apiCall('/invoices', 'GET'),
       apiCall('/definitions?type=category', 'GET'),
       apiCall('/definitions?type=unit', 'GET'),
-      apiCall('/payments', 'GET')  // ✅ NEW: Refresh payments cache too
+      apiCall('/payments', 'GET')
     ]);
 }
 
