@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alrajhi-offline-v4';
+const CACHE_NAME = 'alrajhi-offline-v5';
 const BASE_PATH = self.location.pathname.replace(/service-worker\.js$/, '');
 
 const urlsToCache = [
