@@ -12,8 +12,10 @@ import {
  */
 export async function loadUnitsSection() {
   try {
+    // ✅ نمسح الكاش ثم نعيد تحميله من القاعدة فقط
     unitsCache.length = 0;
-    unitsCache.push(...(await apiCall('/definitions?type=unit', 'GET')));
+    const data = await apiCall('/definitions?type=unit', 'GET');
+    unitsCache.push(...data);
 
     const tc = document.getElementById('tab-content');
     let html = `
@@ -70,7 +72,7 @@ export function showAddUnitModal() {
       if (!v.name) throw new Error('الاسم مطلوب');
       return apiCall('/definitions?type=unit', 'POST', v);
     },
-    onSuccess: loadUnitsSection
+    onSuccess: loadUnitsSection // ✅ يعيد تحميل القسم من القاعدة
   });
 }
 
@@ -89,7 +91,7 @@ export function showEditUnitModal(id) {
     ],
     initialValues: u,
     onSave: async v => apiCall('/definitions?type=unit', 'PUT', { id, ...v }),
-    onSuccess: loadUnitsSection
+    onSuccess: loadUnitsSection // ✅ يعيد تحميل القسم من القاعدة
   });
 }
 
@@ -97,46 +99,40 @@ export function showEditUnitModal(id) {
  * حذف وحدة مع فحص العلاقات
  */
 export async function deleteUnit(unitId) {
-  const unit = unitsCache.find(u => u.id === unitId);
+  const unit = unitsCache.find(u => u.id == unitId);
   if (!unit) return;
 
-  // فحص العلاقات
-  const { counts } = await checkCascadeDelete('units', unitId);
+  try {
+    const { counts } = await checkCascadeDelete('units', unitId);
 
-  // إذا كانت الوحدة أساسية لأي مادة – لا نسمح بالحذف
-  if (counts.itemsBase > 0) {
-    showToast(
-      `لا يمكن حذف "${unit.name}" لأنها الوحدة الأساسية لـ ${counts.itemsBase} مادة. قم بتغييرها أولاً.`,
-      'error'
-    );
-    return;
-  }
+    if (counts.itemsBase > 0) {
+      showToast(
+        `لا يمكن حذف "${unit.name}" لأنها الوحدة الأساسية لـ ${counts.itemsBase} مادة. قم بتغييرها أولاً.`,
+        'error'
+      );
+      return;
+    }
 
-  // إذا كانت الوحدة مستخدمة كوحدة فرعية فقط
-  if (counts.itemUnits > 0) {
-    const proceed = await confirmDialog(
-      `الوحدة "${unit.name}" مستخدمة كوحدة فرعية في ${counts.itemUnits} مادة.\nإذا تابعت، ستتم إزالتها من هذه المواد. متابعة؟`
-    );
-    if (!proceed) return;
+    if (counts.itemUnits > 0) {
+      const proceed = await confirmDialog(
+        `الوحدة "${unit.name}" مستخدمة كوحدة فرعية في ${counts.itemUnits} مادة.\nإذا تابعت، ستتم إزالتها من هذه المواد. متابعة؟`
+      );
+      if (!proceed) return;
 
-    try {
       await performCascadeDelete('units', unitId);
       showToast('تم حذف الوحدة وإزالتها من المواد.', 'success');
-      loadUnitsSection();
-    } catch (e) {
-      showToast(e.message, 'error');
+      // ✅ نعيد تحميل القسم بالكامل من القاعدة
+      await loadUnitsSection();
+      return;
     }
-    return;
-  }
 
-  // حذف عادي (لا توجد ارتباطات)
-  if (!(await confirmDialog(`حذف "${unit.name}"؟`))) return;
+    if (!(await confirmDialog(`حذف "${unit.name}"؟`))) return;
 
-  try {
     await apiCall('/definitions?type=unit&id=' + unitId, 'DELETE');
     showToast('تم الحذف', 'success');
-    loadUnitsSection();
+    await loadUnitsSection(); // ✅ إعادة تحميل
   } catch (e) {
-    showToast(e.message, 'error');
+    console.error('[Delete Unit Error]', e);
+    showToast('فشل الحذف: ' + (e.message || 'خطأ غير معروف'), 'error');
   }
 }

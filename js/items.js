@@ -50,7 +50,6 @@ export function renderFilteredItems() {
 
   let html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
   filtered.forEach(item => {
-    // ✅ Use loose equality for unit lookup
     const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
     const unitName = baseUnit.name || 'قطعة';
     html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
@@ -76,11 +75,10 @@ export async function getOrCreateUnit(name) {
   if (u) return u.id;
   const res = await apiCall('/definitions?type=unit', 'POST', { name, abbreviation: name });
   u = { id: res.id, name, abbreviation: name };
-  unitsCache.push(u);
+  // لم نعد ندفع للكاش يدوياً، بل سنعتمد على loadUnitsSection لاحقاً
   return u.id;
 }
 
-// ✅ FIXED: Use loose equality (==) for id comparisons inside this and nested modals
 export function showItemDetail(itemId) {
   const item = itemsCache.find(i => i.id == itemId);
   if (!item) {
@@ -101,7 +99,6 @@ export function showItemDetail(itemId) {
     unitsHtml += '</ul></div>';
   }
 
-  // ✅ Use loose equality for category lookup
   const categoryName = item.category_id
     ? (categoriesCache.find(c => c.id == item.category_id)?.name || '-')
     : 'بدون تصنيف';
@@ -133,7 +130,6 @@ export function showItemDetail(itemId) {
   modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
-      // ✅ FIXED: Wrapped in try-catch
       try {
         const { counts } = await checkCascadeDelete('items', itemId);
         if (counts.invoiceLines > 0) {
@@ -147,17 +143,20 @@ export function showItemDetail(itemId) {
         if (!(await confirmDialog(`حذف المادة "${item.name}"؟`))) return;
         await apiCall('/items?id=' + itemId, 'DELETE');
         showToast('تم الحذف', 'success');
-        loadItems(); // ستعيد تحميل القسم بالكامل
-      } catch (e) {
-        console.error('[Delete Item Error]', e);
-        showToast('فشل حذف المادة: ' + (e.message || 'خطأ غير معروف'), 'error');
+        loadItems();
+      } catch (err) {
+        console.error('[Item Delete Error]', err);
+        showToast('فشل الحذف: ' + (err.message || 'خطأ غير معروف'), 'error');
       }
     }, 200);
   };
 }
 
 export function showAddItemModal() {
-  const catOpts = categoriesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  // نأخذ نسخة محلية من التصنيفات حتى لا نعدّل الكاش العالمي في حالة الإضافة السريعة
+  const localCategories = categoriesCache.slice();
+
+  const catOpts = localCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
   const body = `
     <div class="form-group">
@@ -292,7 +291,8 @@ export function showAddItemModal() {
     try {
       const res = await apiCall('/definitions?type=category', 'POST', { type: 'category', name });
       const newId = res.id;
-      categoriesCache.push({ id: newId, name });
+      // أضف التصنيف محلياً فقط داخل هذه النافذة، ولا تلمس الكاش العام
+      localCategories.push({ id: newId, name });
       const o = document.createElement('option');
       o.value = newId;
       o.textContent = name;
@@ -367,8 +367,11 @@ export function showAddItemModal() {
 }
 
 export function showEditItemModal(id) {
-  const item = itemsCache.find(i => i.id == id); // ✅ Use loose equality
-  if (!item) return;
+  const item = itemsCache.find(i => i.id == id);
+  if (!item) {
+    showToast('المادة غير موجودة', 'error');
+    return;
+  }
 
   const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
   const baseUnitName = baseUnit.name || 'قطعة';
@@ -454,7 +457,7 @@ export function checkStockAvailability(lines, type) {
   if (type !== 'sale') return true;
   for (const line of lines) {
     if (!line.item_id) continue;
-    const item = itemsCache.find(i => i.id == line.item_id); // ✅ Use loose equality
+    const item = itemsCache.find(i => i.id == line.item_id);
     if (!item) continue;
     const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
     if (baseQty > (item.quantity || 0)) {

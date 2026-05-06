@@ -15,7 +15,7 @@ import {
 export async function loadGenericSection(endpoint, cacheKey) {
   const data = await apiCall(endpoint, 'GET');
 
-  // تحديث الكاش المناسب
+  // إعادة بناء الكاش من الصفر
   if (cacheKey === 'customers') {
     customersCache.length = 0;
     customersCache.push(...data);
@@ -89,7 +89,7 @@ document.addEventListener('click', async e => {
           return apiCall(endpoints[type], 'POST', { name: v.name });
         }
       },
-      onSuccess: () => loadGenericSection(endpoints[type], type)
+      onSuccess: () => loadGenericSection(endpoints[type], type) // ← يعيد تحميل القسم بعد الإضافة
     });
   }
 
@@ -107,7 +107,7 @@ document.addEventListener('click', async e => {
       suppliers: suppliersCache,
       categories: categoriesCache
     };
-    // ✅ FIXED: Use loose equality (==) to handle both string and number ids
+    // استخدام == لمقارنة مرنة
     const item = caches[type]?.find(x => x.id == id);
     if (!item) {
       showToast('العنصر غير موجود في الكاش', 'error');
@@ -131,7 +131,7 @@ document.addEventListener('click', async e => {
           return apiCall(`/${type}`, 'PUT', { id, name: v.name });
         }
       },
-      onSuccess: () => loadGenericSection(endpoints[type], type)
+      onSuccess: () => loadGenericSection(endpoints[type], type) // ← يعيد تحميل القسم بعد التعديل
     });
   }
 
@@ -144,10 +144,10 @@ document.addEventListener('click', async e => {
       return;
     }
 
-    // الوحدات تُعالج في units.js (يوجد مستمع مستقل هناك)
+    // الوحدات تُعالج في units.js
     if (type === 'units') return;
 
-    // ✅ FIXED: Wrapped entire delete flow in try-catch
+    // العملية بالكامل داخل try...catch
     try {
       const name = (() => {
         const caches = {
@@ -155,7 +155,7 @@ document.addEventListener('click', async e => {
           suppliers: suppliersCache,
           categories: categoriesCache
         };
-        // ✅ FIXED: Use loose equality (==) to handle both string and number ids
+        // == لمقارنة مرنة
         const item = caches[type]?.find(x => x.id == id);
         return item ? item.name : '';
       })();
@@ -168,7 +168,6 @@ document.addEventListener('click', async e => {
       // ---- فحص العلاقات ----
       const { counts } = await checkCascadeDelete(type, id);
 
-      // 1) العملاء والموردين: لا يمكن حذفهم إذا كان لديهم فواتير أو دفعات
       if (type === 'customers' || type === 'suppliers') {
         if (counts.invoices > 0 || counts.payments > 0) {
           showToast(
@@ -179,7 +178,6 @@ document.addEventListener('click', async e => {
         }
       }
 
-      // 2) التصنيفات: نسمح بالحذف مع تعيين تصنيف المواد المرتبطة إلى null
       if (type === 'categories' && counts.items > 0) {
         const proceed = await confirmDialog(
           `التصنيف "${name}" يحتوي على ${counts.items} مادة.\nإذا تابعت، سيتم إزالة التصنيف من هذه المواد. متابعة؟`
@@ -191,11 +189,10 @@ document.addEventListener('click', async e => {
           await db.categories.delete(id);
         });
         showToast('تم حذف التصنيف وإزالته من المواد.', 'success');
-        await loadGenericSection('/definitions?type=category', 'categories');
+        await loadGenericSection('/definitions?type=category', 'categories'); // ← ينتظر إعادة التحميل
         return;
       }
 
-      // إذا لم تكن هناك عوائق نطلب تأكيداً عادياً
       if (!(await confirmDialog(`حذف "${name}"؟`))) return;
 
       const delUrls = {
@@ -211,8 +208,7 @@ document.addEventListener('click', async e => {
         suppliers: '/suppliers',
         categories: '/definitions?type=category'
       };
-      // ✅ FIXED: Await the refresh
-      await loadGenericSection(endpoints[type], type);
+      await loadGenericSection(endpoints[type], type); // ← ينتظر إعادة التحميل بعد الحذف
       
     } catch (err) {
       console.error('[Delete Error]', err);

@@ -2,7 +2,6 @@ import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, openModal, confirmDialog } from './utils.js';
 import { db, apiCall, itemsCache, customersCache, suppliersCache, unitsCache, invoicesCache } from './db.js';
 import { checkStockAvailability } from './items.js';
-// ✅ FIXED: Renamed import from './accounting.js' (was './accouting.js')
 import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accounting.js';
 
 /**
@@ -73,7 +72,6 @@ export async function showInvoiceModal(type) {
 
     const getUnitOptions = item => {
       if (!item) return '<option value="">اختر مادة</option>';
-      // ✅ Use loose equality for id comparison
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
       let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
@@ -90,7 +88,7 @@ export async function showInvoiceModal(type) {
       const unitSel = row.querySelector('.unit-select');
 
       sel.addEventListener('change', () => {
-        const item = itemsCache.find(i => i.id == sel.value); // ✅ Use loose equality
+        const item = itemsCache.find(i => i.id == sel.value);
         if (item) {
           const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
           if (unitSel) {
@@ -203,7 +201,6 @@ export async function showInvoiceModal(type) {
             });
           }
 
-          // استخدام دوال المحاسبة الموحدة
           await applyStockChanges(lines, type);
           if (entity && entity !== 'cash') {
             const total = lines.reduce((s, l) => s + l.total, 0);
@@ -281,13 +278,13 @@ export function renderFilteredInvoices() {
 
   container.querySelectorAll('.view-inv-btn').forEach(b => {
     b.addEventListener('click', () => {
-      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id)); // ✅ Use loose equality
+      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id));
       if (inv) showInvoiceDetail(inv);
     });
   });
   container.querySelectorAll('.print-inv-btn').forEach(b => {
     b.addEventListener('click', () => {
-      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id)); // ✅ Use loose equality
+      const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id));
       if (inv) printInvoice(inv, { preview: true, format: 'thermal' });
     });
   });
@@ -295,10 +292,10 @@ export function renderFilteredInvoices() {
     b.addEventListener('click', async () => {
       const invId = parseInt(b.dataset.id);
       try {
-        // ✅ Use confirmDialog and deleteInvoice with error handling
         if (await confirmDialog('حذف الفاتورة؟ سيتم إعادة المخزون وتعديل الأرصدة.')) {
           await deleteInvoice(invId);
-          renderFilteredInvoices();
+          // ✅ إعادة تحميل القسم من قاعدة البيانات بدلاً من التلاعب المباشر بالكاش
+          await loadInvoices();
         }
       } catch (e) {
         showToast('فشل حذف الفاتورة: ' + (e.message || 'خطأ غير معروف'), 'error');
@@ -308,7 +305,6 @@ export function renderFilteredInvoices() {
 }
 
 export function showInvoiceDetail(inv) {
-  // ✅ Use loose equality for ids in lines lookup
   const lines = (inv.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id);
@@ -328,10 +324,8 @@ export function showInvoiceDetail(inv) {
   modal.element.querySelector('#det-close').onclick = () => modal.close();
 }
 
-// ✅ FIXED: Exported function instead of window global
 export function printInvoice(invoice, options = {}) {
   const { preview = false } = options;
-  // ✅ Use loose equality for ids in lines lookup
   const linesHTML = (invoice.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
     const unit = unitsCache.find(u => u.id == l.unit_id);
@@ -357,10 +351,10 @@ export function printInvoice(invoice, options = {}) {
 
 /**
  * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
- * ✅ FIXED: Now exported with try-catch and loose equality
+ * ✅ تم إزالة التلاعب المباشر بالكاش، وسيتم إعادة تحميل القسم بعد الحذف
  */
 export async function deleteInvoice(invId) {
-  // ✅ Use loose equality to find invoice in cache
+  // استخدم الكاش فقط للعثور على معلومات الفاتورة قبل حذفها
   const inv = invoicesCache.find(i => i.id == invId);
   if (!inv) {
     showToast('الفاتورة غير موجودة', 'error');
@@ -386,14 +380,11 @@ export async function deleteInvoice(invId) {
       await db.invoices.delete(invId);
     });
 
-    // تحديث الكاش
-    const idx = invoicesCache.findIndex(i => i.id == invId);
-    if (idx !== -1) invoicesCache.splice(idx, 1);
-    
+    // ✅ لا نقوم بتحديث الكاش هنا، بل سنعيد تحميل القسم من المتصل
     showToast('تم حذف الفاتورة بنجاح', 'success');
   } catch (e) {
     console.error('[Delete Invoice Error]', e);
     showToast('فشل حذف الفاتورة: ' + (e.message || 'خطأ غير معروف'), 'error');
-    throw e; // rethrow so caller can handle if needed
+    throw e;
   }
 }

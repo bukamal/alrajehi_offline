@@ -93,7 +93,7 @@ async function showAddPaymentModal(refreshCallback) {
     const amount = parseFloat(modal.element.querySelector('#pmt-amount').value);
     if (!amount || amount <= 0) return showToast('المبلغ غير صحيح', 'error');
 
-    const inv = invoicesCache.find(i => i.id === invId);
+    const inv = invoicesCache.find(i => i.id == invId);
     if (!inv) return showToast('الفاتورة غير موجودة', 'error');
     if (amount > inv.balance) return showToast('المبلغ أكبر من الرصيد المتبقي', 'error');
 
@@ -116,14 +116,12 @@ async function showAddPaymentModal(refreshCallback) {
         } else if (inv.supplier_id) {
           await updateEntityBalance('supplier', inv.supplier_id, -amount);
         }
-
-        inv.paid = (inv.paid || 0) + amount;
-        inv.balance = inv.total - inv.paid;
+        // ✅ لا نلمس الكاش هنا، سنترك القسم يعيد تحميل نفسه
       });
 
       modal.close();
       showToast('تم تسجيل الدفعة', 'success');
-      if (refreshCallback) refreshCallback();
+      if (refreshCallback) refreshCallback(); // loadPayments
     } catch (e) {
       showToast('فشل: ' + e.message, 'error');
     }

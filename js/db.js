@@ -119,7 +119,8 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       } else if (type === 'unit') {
         const u = { name: body.name, abbreviation: body.abbreviation || body.name };
         const nid = await getTable('units').add(u);
-        unitsCache.push({ id: nid, ...u });
+        // ✅ تم إزالة السطر الذي كان يضيف للكاش يدوياً:
+        // unitsCache.push({ id: nid, ...u });
         return { id: nid, ...u };
       }
     } else if (table === '/payments') {
