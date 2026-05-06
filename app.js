@@ -1,7 +1,6 @@
 /* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 1 من 10 */
 (function() {
   'use strict';
-(function() {
   // التحقق من وجود Dexie و Chart.js قبل تشغيل التطبيق
   var missing = [];
   if (typeof Dexie === 'undefined') missing.push('Dexie.js');
@@ -20,32 +19,30 @@
     throw new Error('Missing dependencies: ' + missing.join(', '));
   }
 
-  // تفعيل سجل التتبع (debug-log)
-  var debugEl = document.getElementById('debug-log');
-  if (debugEl) {
-    debugEl.style.display = 'block';
-    // تسجيل أي خطأ يحدث بعد ذلك
-    var origError = window.onerror;
-    window.onerror = function(msg, url, line, col, error) {
-      if (debugEl) {
-        debugEl.textContent += '[ERROR] ' + msg + ' (سطر ' + line + ')\n';
-        debugEl.scrollTop = debugEl.scrollHeight;
-      }
-      if (origError) origError.apply(this, arguments);
-    };
-    // اعتراض console.log
-    var origLog = console.log;
-    console.log = function() {
-      var args = Array.from(arguments).join(' ');
-      if (debugEl) {
-        debugEl.textContent += '[LOG] ' + args + '\n';
-        debugEl.scrollTop = debugEl.scrollHeight;
-      }
-      origLog.apply(console, arguments);
-    };
-    console.log('تم تفعيل سجل التتبع');
+// تفعيل debug-log (إن لم يكن مُفعّلاً)
+var debugEl = document.getElementById('debug-log');
+if (debugEl) {
+  debugEl.style.display = 'block';
+  console.log('app.js بدأ التحميل');
+}
+
+// التحقق من وجود Dexie و Chart (مرة أخرى للتأكيد)
+if (typeof Dexie === 'undefined' || typeof Chart === 'undefined') {
+  var missing = [];
+  if (typeof Dexie === 'undefined') missing.push('Dexie');
+  if (typeof Chart === 'undefined') missing.push('Chart');
+  console.error('مكتبات مفقودة: ' + missing.join(', '));
+  // إخفاء شاشة التحميل وإظهار خطأ (يمكن استخدام الدالة المعرفة في HTML)
+  var loader = document.getElementById('loading-screen');
+  if (loader) loader.style.display = 'none';
+  var errorScreen = document.getElementById('error-screen');
+  if (errorScreen) {
+    errorScreen.style.display = 'flex';
+    document.getElementById('error-details').textContent = 'مكتبات مفقودة: ' + missing.join(', ');
   }
-})();
+  throw new Error('Missing libraries');
+}
+
 // ... بقية كود app.js (داخل IIFE الرئيسي)
   const ICONS = {
     home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
