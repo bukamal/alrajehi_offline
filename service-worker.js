@@ -8,9 +8,9 @@ const urlsToCache = [
   BASE_PATH + 'manifest.json',
   BASE_PATH + 'icons/icon-192.png',
   BASE_PATH + 'icons/icon-512.png',
-  BASE_PATH + 'app.js',
+  BASE_PATH + 'js/app-offline.js',
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
-  'dexie.min.js'
+  'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js'
 ];
 
 self.addEventListener('install', event => {
