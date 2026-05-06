@@ -15,9 +15,6 @@ import {
   checkCascadeDelete
 } from './db.js';
 
-/**
- * تحميل وعرض قائمة المواد في المحتوى الرئيسي
- */
 export async function loadItems() {
   itemsCache.length = 0;
   const data = await apiCall('/items', 'GET');
@@ -39,9 +36,6 @@ export async function loadItems() {
   renderFilteredItems();
 }
 
-/**
- * عرض المواد مع إمكانية التصفية حسب البحث
- */
 export function renderFilteredItems() {
   const q = (document.getElementById('items-search')?.value || '').toLowerCase();
   const filtered = itemsCache.filter(i =>
@@ -68,9 +62,6 @@ export function renderFilteredItems() {
   container.innerHTML = html;
 }
 
-/**
- * الحصول على معرّف وحدة معينة (أو إنشاؤها إن لم تكن موجودة)
- */
 export async function getOrCreateUnit(name) {
   if (!name) return null;
   let u = unitsCache.find(x => x.name.toLowerCase() === name.toLowerCase());
@@ -81,9 +72,6 @@ export async function getOrCreateUnit(name) {
   return u.id;
 }
 
-/**
- * نافذة تفاصيل المادة (تُربط عبر window.showItemDetail)
- */
 window.showItemDetail = function (itemId) {
   const item = itemsCache.find(i => i.id === itemId);
   if (!item) return;
@@ -129,7 +117,6 @@ window.showItemDetail = function (itemId) {
     setTimeout(() => showEditItemModal(itemId), 200);
   };
 
-  // --------------- حذف المادة (مع فحص العلاقات) ---------------
   modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
@@ -150,9 +137,6 @@ window.showItemDetail = function (itemId) {
   };
 };
 
-/**
- * نافذة إضافة مادة جديدة
- */
 export function showAddItemModal() {
   const catOpts = categoriesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
@@ -240,14 +224,13 @@ export function showAddItemModal() {
   const qtyConverted = container.querySelector('#qty-converted');
   const qtyBaseVal = container.querySelector('#qty-base-val');
 
-  // تحديث اسم الوحدة الأساسية في Label التحويل عند تغيير الإدخال
   const updateBaseUnitLabel = () => {
     if (baseUnitLabel) {
       baseUnitLabel.textContent = baseNameInput.value.trim() || 'قطعة';
     }
   };
   baseNameInput.addEventListener('input', updateBaseUnitLabel);
-  updateBaseUnitLabel(); // تهيئة
+  updateBaseUnitLabel();
 
   toggleBtn.onclick = () => {
     const isHidden = extraUnitsDiv.style.display === 'none';
@@ -276,14 +259,13 @@ export function showAddItemModal() {
   container.querySelector('#fm-unit2-factor').addEventListener('input', updateQty);
   container.querySelector('#fm-unit3-factor').addEventListener('input', updateQty);
 
-  // إضافة سريعة لتصنيف جديد – إصلاح خطأ `row`
   container.querySelector('#btn-quick-cat').onclick = () => {
     const row = container.querySelector('#quick-cat-row');
     row.style.display = (row.style.display === 'none' ? 'block' : 'none');
   };
 
   container.querySelector('#btn-save-quick-cat').onclick = async () => {
-    const row = container.querySelector('#quick-cat-row'); // تعريف row هنا
+    const row = container.querySelector('#quick-cat-row');
     const input = container.querySelector('#fm-new-category');
     const select = container.querySelector('#fm-category_id');
     const name = input.value.trim();
@@ -305,10 +287,8 @@ export function showAddItemModal() {
     }
   };
 
-  // زر الإلغاء
   container.querySelector('#fm-cancel').onclick = () => modal.close();
 
-  // زر الحفظ
   container.querySelector('#fm-save').onclick = async () => {
     const btn = container.querySelector('#fm-save');
     if (btn.disabled) return;
@@ -338,7 +318,6 @@ export function showAddItemModal() {
         if (uid) item_units.push({ unit_id: uid, conversion_factor: u3factor });
       }
 
-      // الكمية بالوحدة الأساسية
       const qtyEntered = parseFloat(qtyInput.value) || 0;
       const unit = qtyUnit.value;
       const f2 = parseFloat(container.querySelector('#fm-unit2-factor').value) || 1;
@@ -368,9 +347,6 @@ export function showAddItemModal() {
   };
 }
 
-/**
- * نافذة تعديل مادة موجودة
- */
 export function showEditItemModal(id) {
   const item = itemsCache.find(i => i.id == id);
   if (!item) return;
@@ -455,9 +431,6 @@ export function showEditItemModal(id) {
   };
 }
 
-/**
- * التحقق من توفر المخزون عند البيع (تُستخدم في invoices.js)
- */
 export function checkStockAvailability(lines, type) {
   if (type !== 'sale') return true;
   for (const line of lines) {

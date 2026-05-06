@@ -2,6 +2,7 @@ import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, openModal, confirmDialog } from './utils.js';
 import { db, apiCall, itemsCache, customersCache, suppliersCache, unitsCache, invoicesCache } from './db.js';
 import { checkStockAvailability } from './items.js';
+import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accounting.js';
 
 /**
  * فتح نافذة إنشاء فاتورة (بيع أو شراء) مع دعم:
@@ -52,7 +53,6 @@ export async function showInvoiceModal(type) {
     });
     const container = modal.element;
 
-    // تحديث الإجمالي الكلي
     const updateGrandTotal = () => {
       let t = 0;
       container.querySelectorAll('.total-input').forEach(inp => t += parseFloat(inp.value) || 0);
@@ -60,7 +60,6 @@ export async function showInvoiceModal(type) {
       if (gt) gt.textContent = formatNumber(t);
     };
 
-    // حساب إجمالي السطر
     const calc = row => {
       const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
       const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
@@ -71,12 +70,10 @@ export async function showInvoiceModal(type) {
       }
     };
 
-    // بناء خيارات الوحدات للمادة المختارة
     const getUnitOptions = item => {
       if (!item) return '<option value="">اختر مادة</option>';
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
-      // الوحدة الأساسية بعامل تحويل 1
       let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
       (item.item_units || []).forEach(iu => {
         const unit = unitsCache.find(u => u.id == iu.unit_id) || {};
@@ -85,7 +82,6 @@ export async function showInvoiceModal(type) {
       return opts;
     };
 
-    // ربط أحداث السطر الواحد
     const rowHandler = row => {
       const sel = row.querySelector('.item-select');
       const pr = row.querySelector('.price-input');
@@ -99,7 +95,6 @@ export async function showInvoiceModal(type) {
             unitSel.innerHTML = getUnitOptions(item);
             unitSel.style.display = 'block';
             unitSel.dataset.basePrice = basePrice;
-            // تفعيل حدث التغيير لحساب السعر الصحيح حسب الوحدة الافتراضية
             unitSel.dispatchEvent(new Event('change'));
           } else {
             pr.value = basePrice;
@@ -107,10 +102,7 @@ export async function showInvoiceModal(type) {
           }
         } else {
           pr.value = '';
-          if (unitSel) {
-            unitSel.innerHTML = '<option value="">الوحدة</option>';
-            unitSel.style.display = 'none';
-          }
+          if (unitSel) { unitSel.innerHTML = '<option value="">الوحدة</option>'; unitSel.style.display = 'none'; }
         }
       });
 
@@ -126,10 +118,8 @@ export async function showInvoiceModal(type) {
       });
     };
 
-    // تهيئة السطر الأول
     container.querySelectorAll('.line-row').forEach(row => rowHandler(row));
 
-    // زر إضافة سطر جديد
     container.querySelector('#btn-add-line').addEventListener('click', () => {
       const nl = document.createElement('div');
       nl.className = 'line-row';
@@ -141,16 +131,11 @@ export async function showInvoiceModal(type) {
       <button class="line-remove">${ICONS.trash}</button>`;
       container.querySelector('#inv-lines').appendChild(nl);
       rowHandler(nl);
-      nl.querySelector('.line-remove').addEventListener('click', () => {
-        nl.remove();
-        updateGrandTotal();
-      });
+      nl.querySelector('.line-remove').addEventListener('click', () => { nl.remove(); updateGrandTotal(); });
     });
 
-    // زر الإلغاء
     modal.element.querySelector('#inv-cancel').onclick = () => modal.close();
 
-    // زر الحفظ مع المعالجة الكاملة
     modal.element.querySelector('#inv-save').onclick = async () => {
       const lines = [];
       container.querySelectorAll('.line-row').forEach(row => {
@@ -174,7 +159,6 @@ export async function showInvoiceModal(type) {
 
       if (!lines.length) return showToast('أضف بنداً واحداً على الأقل', 'error');
 
-      // ========== تنبيه المخزون غير الكافي (فقط للمبيعات) ==========
       if (type === 'sale') {
         const stockMsg = checkStockAvailability(lines, type);
         if (stockMsg !== true) {
@@ -190,9 +174,7 @@ export async function showInvoiceModal(type) {
       btn.innerHTML = '⏳ جاري الحفظ...';
 
       try {
-        // ========== معاملة ذرية ==========
         await db.transaction('rw', db.items, db.invoices, db.invoiceLines, db.customers, db.suppliers, db.payments, async () => {
-          // 1. حفظ الفاتورة الرئيسية
           const invData = {
             type,
             customer_id: type === 'sale' && entity !== 'cash' ? entity : null,
@@ -204,12 +186,10 @@ export async function showInvoiceModal(type) {
           };
           const invId = await db.invoices.add(invData);
 
-          // 2. حفظ البنود
           for (const line of lines) {
             await db.invoiceLines.add({ ...line, invoice_id: invId });
           }
 
-          // 3. تسجيل الدفعة إن وجدت
           if (paid > 0) {
             await db.payments.add({
               invoice_id: invId,
@@ -221,70 +201,14 @@ export async function showInvoiceModal(type) {
             });
           }
 
-          // 4. تحديث المخزون (بالوحدة الأساسية)
-          for (const line of lines) {
-            if (line.item_id) {
-              const item = await db.items.get(line.item_id);
-              if (item) {
-                const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-                const newQty = type === 'sale'
-                  ? (item.quantity || 0) - baseQty
-                  : (item.quantity || 0) + baseQty;
-                await db.items.update(item.id, { quantity: newQty });
-              }
-            }
-          }
-
-          // 5. تحديث أرصدة العملاء/الموردين (صافي قيمة الفاتورة بعد الدفعة)
-          const invoiceTotal = lines.reduce((s, l) => s + l.total, 0);
-          const netChange = invoiceTotal - paid;
-
-          if (type === 'sale' && entity && entity !== 'cash') {
-            const customer = await db.customers.get(entity);
-            if (customer) {
-              await db.customers.update(entity, {
-                balance: (customer.balance || 0) + netChange
-              });
-            }
-          } else if (type === 'purchase' && entity && entity !== 'cash') {
-            const supplier = await db.suppliers.get(entity);
-            if (supplier) {
-              await db.suppliers.update(entity, {
-                balance: (supplier.balance || 0) + netChange
-              });
-            }
+          // استخدام دوال المحاسبة الموحدة
+          await applyStockChanges(lines, type);
+          if (entity && entity !== 'cash') {
+            const total = lines.reduce((s, l) => s + l.total, 0);
+            const change = netBalanceChange(total, paid);
+            await updateEntityBalance(type === 'sale' ? 'customer' : 'supplier', entity, change);
           }
         });
-
-        // ========== تحديث الكاش المحلي ==========
-        // تجميع التغيرات لكل مادة
-        const qtyDeltaMap = new Map();
-        for (const line of lines) {
-          if (line.item_id) {
-            const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-            const sign = type === 'sale' ? -1 : 1;
-            qtyDeltaMap.set(line.item_id, (qtyDeltaMap.get(line.item_id) || 0) + baseQty * sign);
-          }
-        }
-        for (const [itemId, delta] of qtyDeltaMap) {
-          const cachedItem = itemsCache.find(i => i.id == itemId);
-          if (cachedItem) {
-            cachedItem.quantity = (cachedItem.quantity || 0) + delta;
-          }
-        }
-
-        // أرصدة العملاء/الموردين
-        if (entity && entity !== 'cash') {
-          const invoiceTotal = lines.reduce((s, l) => s + l.total, 0);
-          const netChange = invoiceTotal - paid;
-          if (type === 'sale') {
-            const cachedCust = customersCache.find(c => c.id == entity);
-            if (cachedCust) cachedCust.balance = (cachedCust.balance || 0) + netChange;
-          } else {
-            const cachedSupp = suppliersCache.find(s => s.id == entity);
-            if (cachedSupp) cachedSupp.balance = (cachedSupp.balance || 0) + netChange;
-          }
-        }
 
         modal.close();
         showToast('تم حفظ الفاتورة بنجاح', 'success');
@@ -300,7 +224,6 @@ export async function showInvoiceModal(type) {
   }
 }
 
-// ===== عرض قائمة الفواتير =====
 export async function loadInvoices() {
   invoicesCache.length = 0;
   invoicesCache.push(...(await apiCall('/invoices', 'GET')));
@@ -397,7 +320,6 @@ export function showInvoiceDetail(inv) {
   modal.element.querySelector('#det-close').onclick = () => modal.close();
 }
 
-// طباعة الفاتورة (حجم حراري)
 window.printInvoice = function (invoice, options = {}) {
   const { preview = false } = options;
   const linesHTML = (invoice.invoice_lines || []).map(l => {
@@ -414,10 +336,7 @@ window.printInvoice = function (invoice, options = {}) {
       bodyHTML: `<iframe srcdoc="${thermalHTML.replace(/"/g, '&quot;')}" style="width:100%;height:400px;"></iframe>`,
       footerHTML: `<button class="btn btn-primary" id="print-now">طباعة</button>`
     });
-    modal.element.querySelector('#print-now').onclick = () => {
-      modal.close();
-      window.print();
-    };
+    modal.element.querySelector('#print-now').onclick = () => { modal.close(); window.print(); };
     return;
   }
   const w = window.open('', '_blank');
@@ -428,84 +347,30 @@ window.printInvoice = function (invoice, options = {}) {
 
 /**
  * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
- * @param {number} invId - معرّف الفاتورة
  */
 async function deleteInvoice(invId) {
   const inv = invoicesCache.find(i => i.id === invId);
   if (!inv) return;
 
-  // الحصول على البنود والدفعات المرتبطة
   const lines = await db.invoiceLines.where({ invoice_id: invId }).toArray();
   const payments = await db.payments.where({ invoice_id: invId }).toArray();
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
   await db.transaction('rw', db.items, db.invoices, db.invoiceLines, db.payments, db.customers, db.suppliers, async () => {
-    // 1. عكس المخزون
-    for (const line of lines) {
-      if (line.item_id) {
-        const item = await db.items.get(line.item_id);
-        if (item) {
-          const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-          const newQty = inv.type === 'sale'
-            ? (item.quantity || 0) + baseQty   // بيع ملغي ← نعيد الكمية للمخزون
-            : (item.quantity || 0) - baseQty;  // شراء ملغي ← نخصم الكمية من المخزون
-          await db.items.update(item.id, { quantity: newQty });
-        }
-      }
-    }
+    await revertStockChanges(lines, inv.type);
 
-    // 2. عكس أثر الدفعات على الأرصدة
     if (inv.customer_id && inv.type === 'sale') {
-      const customer = await db.customers.get(inv.customer_id);
-      if (customer) {
-        await db.customers.update(inv.customer_id, {
-          balance: (customer.balance || 0) - (inv.total - totalPaid)
-        });
-      }
+      await updateEntityBalance('customer', inv.customer_id, -(inv.total - totalPaid));
     } else if (inv.supplier_id && inv.type === 'purchase') {
-      const supplier = await db.suppliers.get(inv.supplier_id);
-      if (supplier) {
-        await db.suppliers.update(inv.supplier_id, {
-          balance: (supplier.balance || 0) - (inv.total - totalPaid)
-        });
-      }
+      await updateEntityBalance('supplier', inv.supplier_id, -(inv.total - totalPaid));
     }
 
-    // 3. حذف الدفعات المرتبطة
     await db.payments.where({ invoice_id: invId }).delete();
-
-    // 4. حذف البنود
     await db.invoiceLines.where({ invoice_id: invId }).delete();
-
-    // 5. حذف الفاتورة نفسها
     await db.invoices.delete(invId);
   });
 
-  // ========== تحديث الكاش المحلي ==========
-  // إزالة الفاتورة من invoicesCache
+  // تحديث الكاش
   const idx = invoicesCache.findIndex(i => i.id === invId);
   if (idx !== -1) invoicesCache.splice(idx, 1);
-
-  // تحديث كميات المواد في itemsCache
-  for (const line of lines) {
-    if (line.item_id) {
-      const cachedItem = itemsCache.find(i => i.id === line.item_id);
-      if (cachedItem) {
-        const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-        cachedItem.quantity = inv.type === 'sale'
-          ? (cachedItem.quantity || 0) + baseQty   // بيع ملغي ← نرجع الكمية
-          : (cachedItem.quantity || 0) - baseQty;  // شراء ملغي ← نخصم الكمية
-      }
-    }
-  }
-
-  // تحديث أرصدة العملاء/الموردين في الكاش
-  const netChange = inv.total - totalPaid;
-  if (inv.customer_id && inv.type === 'sale') {
-    const cust = customersCache.find(c => c.id == inv.customer_id);
-    if (cust) cust.balance = (cust.balance || 0) - netChange;
-  } else if (inv.supplier_id && inv.type === 'purchase') {
-    const supp = suppliersCache.find(s => s.id == inv.supplier_id);
-    if (supp) supp.balance = (supp.balance || 0) - netChange;
-  }
 }

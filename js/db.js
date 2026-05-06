@@ -1,4 +1,3 @@
-// قاعدة البيانات والكاشات العامة
 export let db;
 export let itemsCache = [];
 export let customersCache = [];
@@ -145,7 +144,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   }
 }
 
-// تحديث الكاشات (تُستدعى عند بدء التطبيق أو بعد العمليات)
 export async function refreshCaches() {
   [itemsCache, customersCache, suppliersCache, invoicesCache, categoriesCache, unitsCache] =
     await Promise.all([
@@ -158,16 +156,6 @@ export async function refreshCaches() {
     ]);
 }
 
-/* ==========================================================
-   دوال فحص العلاقات والحذف الآمن (Cascade / Restrict)
-   ========================================================== */
-
-/**
- * التحقق من وجود سجلات مرتبطة قبل محاولة حذف سجل
- * @param {string} table - اسم الجدول
- * @param {number} id   - معرّف السجل
- * @returns {Promise<{counts: Object}>}  كائن يحتوي على تعدادات العلاقات
- */
 export async function checkCascadeDelete(table, id) {
   const counts = {};
   switch (table) {
@@ -203,20 +191,13 @@ export async function checkCascadeDelete(table, id) {
   return { counts };
 }
 
-/**
- * تنفيذ حذف متتالي (للوحدات والتصنيفات فقط)
- * @param {string} table - اسم الجدول
- * @param {number} id   - معرّف السجل
- */
 export async function performCascadeDelete(table, id) {
   await db.transaction('rw', db.tables, async () => {
     switch (table) {
       case 'categories':
-        // إزالة التصنيف من المواد (تعيينه إلى null)
         await db.items.where({ category_id: id }).modify({ category_id: null });
         break;
       case 'units': {
-        // إزالة الوحدة من الوحدات الفرعية في جميع المواد
         const items = await db.items.toArray();
         for (const item of items) {
           if (item.item_units && Array.isArray(item.item_units)) {
@@ -233,9 +214,7 @@ export async function performCascadeDelete(table, id) {
         }
         break;
       }
-      // العملاء والموردين والمواد لا يُسمح بحذفهم المتتالي لأنه يؤثر على التاريخ المحاسبي
     }
-    // حذف السجل نفسه
     await getTable(table).delete(id);
   });
 }
