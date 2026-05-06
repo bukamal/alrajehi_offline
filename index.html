@@ -8,7 +8,6 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <!-- Content Security Policy -->
   
   <title>الراجحي للمحاسبة</title>
   <link rel="manifest" href="manifest.json">
@@ -89,6 +88,7 @@
       <div class="sheet-grid" id="sheet-grid"></div>
     </div>
   </div>
+
   <!-- Auto error display after loading failure -->
   <script>
     (function() {
@@ -101,7 +101,7 @@
           loader.style.display = 'none';
           if (window.errors.length) {
             errorScreen.style.display = 'flex';
-            errorDetails.textContent = window.errors.join('\\n\\n');
+            errorDetails.textContent = window.errors.join('\n\n');
           } else {
             errorScreen.style.display = 'flex';
             errorDetails.textContent = 'فشل تحميل التطبيق دون رسالة خطأ. تحقق من اتصال الانترنت أو تحديث الصفحة.';
@@ -120,8 +120,10 @@
       });
     }
   </script>
-<script src="js/app-offline.js?v=4"></script>
-<div id="debug-log" style="position:fixed; bottom:20px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace; display:none;"></div>
+
+  <!-- تحميل الوحدة الرئيسية كنمط ES Module -->
+  <script type="module" src="js/app.js"></script>
+
+  <div id="debug-log" style="position:fixed; bottom:20px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace; display:none;"></div>
 </body>
 </html>
-
