@@ -95,13 +95,16 @@ export async function showInvoiceModal(type) {
         const item = itemsCache.find(i => i.id == sel.value);
         if (item) {
           const basePrice = type === 'sale' ? (item.selling_price || 0) : (item.purchase_price || 0);
-          pr.value = basePrice;
           if (unitSel) {
             unitSel.innerHTML = getUnitOptions(item);
             unitSel.style.display = 'block';
             unitSel.dataset.basePrice = basePrice;
+            // تفعيل حدث التغيير لحساب السعر الصحيح حسب الوحدة الافتراضية
+            unitSel.dispatchEvent(new Event('change'));
+          } else {
+            pr.value = basePrice;
+            calc(row);
           }
-          calc(row);
         } else {
           pr.value = '';
           if (unitSel) {
@@ -115,6 +118,10 @@ export async function showInvoiceModal(type) {
       row.querySelector('.price-input')?.addEventListener('input', () => calc(row));
 
       unitSel?.addEventListener('change', () => {
+        const selectedOption = unitSel.selectedOptions[0];
+        const factor = parseFloat(selectedOption?.dataset.factor || 1);
+        const basePrice = parseFloat(unitSel.dataset.basePrice) || 0;
+        pr.value = (basePrice * factor).toFixed(2);
         calc(row);
       });
     };
@@ -249,42 +256,38 @@ export async function showInvoiceModal(type) {
           }
         });
 
-        // ========== تحديث الكاشات المحلية ==========
-        if (type === 'sale') {
-          for (const line of lines) {
-            const cachedItem = itemsCache.find(i => i.id == line.item_id);
-            if (cachedItem) {
-              const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-              cachedItem.quantity = (cachedItem.quantity || 0) - baseQty;
-            }
+        // ========== تحديث الكاش المحلي ==========
+        // تجميع التغيرات لكل مادة
+        const qtyDeltaMap = new Map();
+        for (const line of lines) {
+          if (line.item_id) {
+            const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+            const sign = type === 'sale' ? -1 : 1;
+            qtyDeltaMap.set(line.item_id, (qtyDeltaMap.get(line.item_id) || 0) + baseQty * sign);
           }
-          if (entity && entity !== 'cash') {
+        }
+        for (const [itemId, delta] of qtyDeltaMap) {
+          const cachedItem = itemsCache.find(i => i.id == itemId);
+          if (cachedItem) {
+            cachedItem.quantity = (cachedItem.quantity || 0) + delta;
+          }
+        }
+
+        // أرصدة العملاء/الموردين
+        if (entity && entity !== 'cash') {
+          const invoiceTotal = lines.reduce((s, l) => s + l.total, 0);
+          const netChange = invoiceTotal - paid;
+          if (type === 'sale') {
             const cachedCust = customersCache.find(c => c.id == entity);
-            if (cachedCust) {
-              const invTotal = lines.reduce((s, l) => s + l.total, 0);
-              cachedCust.balance = (cachedCust.balance || 0) + (invTotal - paid);
-            }
-          }
-        } else { // purchase
-          for (const line of lines) {
-            const cachedItem = itemsCache.find(i => i.id == line.item_id);
-            if (cachedItem) {
-              const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-              cachedItem.quantity = (cachedItem.quantity || 0) + baseQty;
-            }
-          }
-          if (entity && entity !== 'cash') {
+            if (cachedCust) cachedCust.balance = (cachedCust.balance || 0) + netChange;
+          } else {
             const cachedSupp = suppliersCache.find(s => s.id == entity);
-            if (cachedSupp) {
-              const invTotal = lines.reduce((s, l) => s + l.total, 0);
-              cachedSupp.balance = (cachedSupp.balance || 0) + (invTotal - paid);
-            }
+            if (cachedSupp) cachedSupp.balance = (cachedSupp.balance || 0) + netChange;
           }
         }
 
         modal.close();
         showToast('تم حفظ الفاتورة بنجاح', 'success');
-        // تحديث قائمة الفواتير (اختياري، سيتم عند العودة للقائمة)
         if (typeof loadInvoices === 'function') loadInvoices();
       } catch (e) {
         showToast('فشل حفظ الفاتورة: ' + e.message, 'error');
@@ -455,7 +458,6 @@ async function deleteInvoice(invId) {
     if (inv.customer_id && inv.type === 'sale') {
       const customer = await db.customers.get(inv.customer_id);
       if (customer) {
-        // عند الحذف، نلغي الدين الذي أضفناه (إجمالي الفاتورة) ونعيد الدفعات
         await db.customers.update(inv.customer_id, {
           balance: (customer.balance || 0) - (inv.total - totalPaid)
         });
@@ -479,10 +481,31 @@ async function deleteInvoice(invId) {
     await db.invoices.delete(invId);
   });
 
-  // تحديث الكاش المحلي (إزالة الفاتورة من invoicesCache)
+  // ========== تحديث الكاش المحلي ==========
+  // إزالة الفاتورة من invoicesCache
   const idx = invoicesCache.findIndex(i => i.id === invId);
   if (idx !== -1) invoicesCache.splice(idx, 1);
 
-  // يمكن أيضاً تحديث itemsCache يدوياً لكن من الأفضل إعادة تحميلها في الصفحات الأخرى
-  // نكتفي بالإزالة من الكاش
+  // تحديث كميات المواد في itemsCache
+  for (const line of lines) {
+    if (line.item_id) {
+      const cachedItem = itemsCache.find(i => i.id === line.item_id);
+      if (cachedItem) {
+        const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+        cachedItem.quantity = inv.type === 'sale'
+          ? (cachedItem.quantity || 0) + baseQty   // بيع ملغي ← نرجع الكمية
+          : (cachedItem.quantity || 0) - baseQty;  // شراء ملغي ← نخصم الكمية
+      }
+    }
+  }
+
+  // تحديث أرصدة العملاء/الموردين في الكاش
+  const netChange = inv.total - totalPaid;
+  if (inv.customer_id && inv.type === 'sale') {
+    const cust = customersCache.find(c => c.id == inv.customer_id);
+    if (cust) cust.balance = (cust.balance || 0) - netChange;
+  } else if (inv.supplier_id && inv.type === 'purchase') {
+    const supp = suppliersCache.find(s => s.id == inv.supplier_id);
+    if (supp) supp.balance = (supp.balance || 0) - netChange;
+  }
 }
