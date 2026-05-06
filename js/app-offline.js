@@ -571,6 +571,7 @@ async function showInvoiceModal(type) {
       if (!item) return '<option value="">اختر مادة</option>';
       const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
       const baseName = baseUnit.name || 'قطعة';
+      // تأكيد وجود data-factor="1" للوحدة الأساسية
       let opts = `<option value="" data-factor="1">${baseName} (أساسية)</option>`;
       (item.item_units || []).forEach(iu => {
         const unit = unitsCache.find(u => u.id == iu.unit_id) || {};
@@ -631,6 +632,7 @@ async function showInvoiceModal(type) {
       container.querySelectorAll('.line-row').forEach(row => {
         const id = row.querySelector('.item-select')?.value || null;
         const unitId = row.querySelector('.unit-select')?.value || null;
+        // استخراج عامل التحويل (يكون 1 للوحدة الأساسية)
         const factor = parseFloat(row.querySelector('.unit-select')?.selectedOptions[0]?.dataset.factor || 1);
         const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
         const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
@@ -644,7 +646,8 @@ async function showInvoiceModal(type) {
       const btn = container.querySelector('#inv-save');
       btn.disabled = true; btn.innerHTML = '⏳ جاري الحفظ...';
 
-      await apiCall('/invoices', 'POST', {
+      // حفظ الفاتورة (مع تسجيل الدفعة داخلياً)
+      const savedInvoice = await apiCall('/invoices', 'POST', {
         type,
         customer_id: type === 'sale' && entity !== 'cash' ? entity : null,
         supplier_id: type === 'purchase' && entity !== 'cash' ? entity : null,
@@ -655,11 +658,79 @@ async function showInvoiceModal(type) {
         total: lines.reduce((s, l) => s + l.total, 0),
         paid_amount: paid
       });
-      modal.close(); showToast('تم حفظ الفاتورة بنجاح', 'success'); loadInvoices();
-    };
-  } catch (e) { showToast('خطأ في فتح الفاتورة: ' + e.message, 'error'); }
-}
 
+      // ------------------------------
+      // تحديث المخزون (النقطة 1 و 2)
+      // ------------------------------
+      for (const line of lines) {
+        if (line.item_id) {
+          const item = itemsCache.find(i => i.id == line.item_id);
+          if (item) {
+            // تحويل الكمية المُدخلة إلى الوحدة الأساسية باستخدام عامل التحويل
+            const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+            if (type === 'sale') {
+              // بيع: إنقاص المخزون
+              await db.items.update(item.id, { quantity: (item.quantity || 0) - baseQty });
+            } else {
+              // شراء: زيادة المخزون
+              await db.items.update(item.id, { quantity: (item.quantity || 0) + baseQty });
+            }
+          }
+        }
+      }
+
+      // تحديث رصيد العميل أو المورد (صافي المبلغ بعد خصم الدفعة)
+      const invoiceTotal = lines.reduce((s, l) => s + l.total, 0);
+      const netBalanceChange = invoiceTotal - paid;
+      if (type === 'sale' && entity && entity !== 'cash') {
+        const customer = customersCache.find(c => c.id == entity);
+        if (customer) {
+          await db.customers.update(entity, { balance: (customer.balance || 0) + netBalanceChange });
+        }
+      } else if (type === 'purchase' && entity && entity !== 'cash') {
+        const supplier = suppliersCache.find(s => s.id == entity);
+        if (supplier) {
+          await db.suppliers.update(entity, { balance: (supplier.balance || 0) + netBalanceChange });
+        }
+      }
+
+      // تحديث الكاشات المحلية لتعكس التغييرات فوراً (اختياري لكن مفضل)
+      // يمكن الاكتفاء بإعادة تحميل القوائم لاحقاً، لكن هذا يحافظ على التناسق
+      if (type === 'sale') {
+        // تحديث itemsCache
+        for (const line of lines) {
+          const cachedItem = itemsCache.find(i => i.id == line.item_id);
+          if (cachedItem) {
+            const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+            cachedItem.quantity = (cachedItem.quantity || 0) - baseQty;
+          }
+        }
+        if (entity && entity !== 'cash') {
+          const cachedCust = customersCache.find(c => c.id == entity);
+          if (cachedCust) cachedCust.balance = (cachedCust.balance || 0) + netBalanceChange;
+        }
+      } else {
+        for (const line of lines) {
+          const cachedItem = itemsCache.find(i => i.id == line.item_id);
+          if (cachedItem) {
+            const baseQty = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+            cachedItem.quantity = (cachedItem.quantity || 0) + baseQty;
+          }
+        }
+        if (entity && entity !== 'cash') {
+          const cachedSupp = suppliersCache.find(s => s.id == entity);
+          if (cachedSupp) cachedSupp.balance = (cachedSupp.balance || 0) + netBalanceChange;
+        }
+      }
+
+      modal.close();
+      showToast('تم حفظ الفاتورة بنجاح', 'success');
+      loadInvoices(); // تحديث قائمة الفواتير
+    };
+  } catch (e) {
+    showToast('خطأ في فتح الفاتورة: ' + e.message, 'error');
+  }
+}
 // ===== قائمة الفواتير مع عرض/طباعة/حذف =====
 async function loadInvoices() {
   invoicesCache = await apiCall('/invoices', 'GET');
