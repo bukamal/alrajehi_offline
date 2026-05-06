@@ -1,20 +1,17 @@
 import { ICONS } from './constants.js';
 import { showToast, showFormModal, confirmDialog } from './utils.js';
 import {
+  db,
   apiCall,
   unitsCache,
   checkCascadeDelete,
   performCascadeDelete
 } from './db.js';
 
-/**
- * تحميل وإظهار صفحة الوحدات
- */
 export async function loadUnitsSection() {
   try {
-    // ✅ نمسح الكاش ثم نعيد تحميله من القاعدة فقط
     unitsCache.length = 0;
-    const data = await apiCall('/definitions?type=unit', 'GET');
+    const data = await db.units.toArray();
     unitsCache.push(...data);
 
     const tc = document.getElementById('tab-content');
@@ -45,7 +42,6 @@ export async function loadUnitsSection() {
 
     tc.innerHTML = html;
 
-    // ربط الأزرار
     document.getElementById('btn-add-unit')?.addEventListener('click', showAddUnitModal);
     document.querySelectorAll('.edit-btn[data-type="units"]').forEach(btn => {
       btn.addEventListener('click', () => showEditUnitModal(parseInt(btn.dataset.id)));
@@ -58,9 +54,6 @@ export async function loadUnitsSection() {
   }
 }
 
-/**
- * نافذة إضافة وحدة جديدة
- */
 export function showAddUnitModal() {
   showFormModal({
     title: 'إضافة وحدة',
@@ -72,13 +65,10 @@ export function showAddUnitModal() {
       if (!v.name) throw new Error('الاسم مطلوب');
       return apiCall('/definitions?type=unit', 'POST', v);
     },
-    onSuccess: loadUnitsSection // ✅ يعيد تحميل القسم من القاعدة
+    onSuccess: loadUnitsSection
   });
 }
 
-/**
- * نافذة تعديل وحدة
- */
 export function showEditUnitModal(id) {
   const u = unitsCache.find(x => x.id == id);
   if (!u) return;
@@ -90,14 +80,11 @@ export function showEditUnitModal(id) {
       { id: 'abbreviation', label: 'الاختصار' }
     ],
     initialValues: u,
-    onSave: async v => apiCall('/definitions?type=unit', 'PUT', { id, ...v }),
-    onSuccess: loadUnitsSection // ✅ يعيد تحميل القسم من القاعدة
+    onSave: async v => db.units.update(id, v),
+    onSuccess: loadUnitsSection
   });
 }
 
-/**
- * حذف وحدة مع فحص العلاقات
- */
 export async function deleteUnit(unitId) {
   const unit = unitsCache.find(u => u.id == unitId);
   if (!unit) return;
@@ -121,16 +108,15 @@ export async function deleteUnit(unitId) {
 
       await performCascadeDelete('units', unitId);
       showToast('تم حذف الوحدة وإزالتها من المواد.', 'success');
-      // ✅ نعيد تحميل القسم بالكامل من القاعدة
       await loadUnitsSection();
       return;
     }
 
     if (!(await confirmDialog(`حذف "${unit.name}"؟`))) return;
 
-    await apiCall('/definitions?type=unit&id=' + unitId, 'DELETE');
+    await db.units.delete(unitId);
     showToast('تم الحذف', 'success');
-    await loadUnitsSection(); // ✅ إعادة تحميل
+    await loadUnitsSection();
   } catch (e) {
     console.error('[Delete Unit Error]', e);
     showToast('فشل الحذف: ' + (e.message || 'خطأ غير معروف'), 'error');

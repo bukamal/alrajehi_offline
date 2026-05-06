@@ -19,7 +19,7 @@ export function initDB() {
   db = new Dexie('AlrajhiDBv3');
   db.version(1).stores({
     items:
-      '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id, item_units',
+      '++id, name, category_id, item_type, purchase_price, selling_price, quantity, base_unit_id',
     customers: '++id, name, phone, address, balance',
     suppliers: '++id, name, phone, address, balance',
     categories: '++id, name',
@@ -53,30 +53,46 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   if (method === 'GET') {
     switch (table) {
       case '/items':
-        return await getTable('items').toArray();
+        return await db.items.toArray();
       case '/customers':
-        return await getTable('customers').toArray();
+        return await db.customers.toArray();
       case '/suppliers':
-        return await getTable('suppliers').toArray();
+        return await db.suppliers.toArray();
       case '/definitions':
-        if (type === 'category') return await getTable('categories').toArray();
-        if (type === 'unit') return await getTable('units').toArray();
+        if (type === 'category') return await db.categories.toArray();
+        if (type === 'unit') return await db.units.toArray();
         return [];
       case '/invoices': {
-        const invs = await getTable('invoices').toArray();
+        const invs = await db.invoices.toArray();
+        // تحسين N+1: جلب جميع البنود والدفعات دفعة واحدة
+        const [allLines, allPayments] = await Promise.all([
+          db.invoiceLines.toArray(),
+          db.payments.toArray()
+        ]);
+        const linesMap = new Map();
+        allLines.forEach(l => {
+          const arr = linesMap.get(l.invoice_id) || [];
+          arr.push(l);
+          linesMap.set(l.invoice_id, arr);
+        });
+        const paymentsMap = new Map();
+        allPayments.forEach(p => {
+          const arr = paymentsMap.get(p.invoice_id) || [];
+          arr.push(p);
+          paymentsMap.set(p.invoice_id, arr);
+        });
         for (const inv of invs) {
-          const lines = await getTable('invoiceLines').where({ invoice_id: inv.id }).toArray();
-          const pmts = await getTable('payments').where({ invoice_id: inv.id }).toArray();
-          inv.invoice_lines = lines;
+          inv.invoice_lines = linesMap.get(inv.id) || [];
+          const pmts = paymentsMap.get(inv.id) || [];
           inv.paid = pmts.reduce((s, p) => s + p.amount, 0);
           inv.balance = inv.total - inv.paid;
         }
         return invs;
       }
       case '/payments':
-        return await getTable('payments').toArray();
+        return await db.payments.toArray();
       case '/expenses':
-        return await getTable('expenses').toArray();
+        return await db.expenses.toArray();
       default:
         return [];
     }
@@ -86,17 +102,17 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       clean.purchase_price = parseFloat(clean.purchase_price) || 0;
       clean.selling_price = parseFloat(clean.selling_price) || 0;
       clean.quantity = parseFloat(clean.quantity) || 0;
-      const nid = await getTable('items').add(clean);
+      const nid = await db.items.add(clean);
       return { id: nid, ...clean };
     } else if (table === '/invoices') {
       const lines = body.lines;
       delete body.lines;
       const paid_amount = parseFloat(body.paid_amount) || 0;
       delete body.paid_amount;
-      const invId = await getTable('invoices').add(body);
-      if (lines) for (const l of lines) await getTable('invoiceLines').add({ ...l, invoice_id: invId });
+      const invId = await db.invoices.add(body);
+      if (lines) for (const l of lines) await db.invoiceLines.add({ ...l, invoice_id: invId });
       if (paid_amount > 0) {
-        await getTable('payments').add({
+        await db.payments.add({
           invoice_id: invId,
           customer_id: body.customer_id || null,
           supplier_id: body.supplier_id || null,
@@ -107,45 +123,39 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       }
       return { id: invId, ...body };
     } else if (table === '/customers') {
-      const nid = await getTable('customers').add(body);
+      const nid = await db.customers.add(body);
       return { id: nid, ...body };
     } else if (table === '/suppliers') {
-      const nid = await getTable('suppliers').add(body);
+      const nid = await db.suppliers.add(body);
       return { id: nid, ...body };
     } else if (table === '/definitions') {
       if (type === 'category') {
-        const nid = await getTable('categories').add({ name: body.name });
+        const nid = await db.categories.add({ name: body.name });
         return { id: nid, ...body };
       } else if (type === 'unit') {
         const u = { name: body.name, abbreviation: body.abbreviation || body.name };
-        const nid = await getTable('units').add(u);
-        // ✅ تم إزالة السطر الذي كان يضيف للكاش يدوياً:
-        // unitsCache.push({ id: nid, ...u });
+        const nid = await db.units.add(u);
         return { id: nid, ...u };
       }
     } else if (table === '/payments') {
-      const nid = await getTable('payments').add(body);
+      const nid = await db.payments.add(body);
       return { id: nid, ...body };
     } else if (table === '/expenses') {
-      const nid = await getTable('expenses').add(body);
+      const nid = await db.expenses.add(body);
       return { id: nid, ...body };
     }
   } else if (method === 'DELETE') {
-    // ✅ FIXED: Validate id before attempting delete
     if (!id) {
       throw new Error('معرّف السجل مطلوب للحذف');
     }
-    
     const tbl = table.split('?')[0].replace('/', '');
-    
     if (tbl === 'invoices') {
-      await getTable('invoiceLines').where({ invoice_id: id }).delete();
+      await db.invoiceLines.where({ invoice_id: id }).delete();
     }
-
     if (tbl === 'definitions') {
       const defType = type || params.get('type');
-      if (defType === 'category') await getTable('categories').delete(id);
-      else if (defType === 'unit') await getTable('units').delete(id);
+      if (defType === 'category') await db.categories.delete(id);
+      else if (defType === 'unit') await db.units.delete(id);
       else throw new Error('نوع التعريف غير معروف للحذف');
     } else {
       await getTable(tbl).delete(id);
@@ -153,7 +163,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
     return { success: true };
   } else if (method === 'PUT') {
     let tbl = table.split('?')[0].replace('/', '');
-    
     let recordId = id;
     if (!recordId && body.id !== undefined && body.id !== null) {
       const parsedBodyId = parseInt(body.id, 10);
@@ -161,17 +170,14 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
         recordId = parsedBodyId;
       }
     }
-    
     if (recordId === undefined || recordId === null) throw new Error('معرّف السجل مطلوب للتعديل');
-    
     const changes = { ...body };
     delete changes.id;
-    
     if (tbl === 'definitions') {
       const defType = type || changes.type;
       delete changes.type;
-      if (defType === 'category') await getTable('categories').update(recordId, changes);
-      else if (defType === 'unit') await getTable('units').update(recordId, changes);
+      if (defType === 'category') await db.categories.update(recordId, changes);
+      else if (defType === 'unit') await db.units.update(recordId, changes);
       else throw new Error('نوع التعريف غير معروف');
     } else {
       await getTable(tbl).update(recordId, changes);

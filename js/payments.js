@@ -3,11 +3,8 @@ import { formatNumber, formatDate, showToast, openModal } from './utils.js';
 import { db, apiCall, invoicesCache, customersCache, suppliersCache } from './db.js';
 import { updateEntityBalance } from './accounting.js';
 
-/**
- * عرض قائمة الدفعات مع خيار الإضافة
- */
 export async function loadPayments() {
-  const payments = await apiCall('/payments', 'GET');
+  const payments = await db.payments.toArray();
   const tc = document.getElementById('tab-content');
   tc.innerHTML = `<div class="card">
       <div class="card-header">
@@ -35,9 +32,6 @@ export async function loadPayments() {
   document.getElementById('btn-add-pmt')?.addEventListener('click', () => showAddPaymentModal(loadPayments));
 }
 
-/**
- * فتح نافذة تسجيل دفعة (مرتبطة بفاتورة)
- */
 async function showAddPaymentModal(refreshCallback) {
   const invoices = await apiCall('/invoices', 'GET');
   invoicesCache.length = 0;
@@ -116,12 +110,11 @@ async function showAddPaymentModal(refreshCallback) {
         } else if (inv.supplier_id) {
           await updateEntityBalance('supplier', inv.supplier_id, -amount);
         }
-        // ✅ لا نلمس الكاش هنا، سنترك القسم يعيد تحميل نفسه
       });
 
       modal.close();
       showToast('تم تسجيل الدفعة', 'success');
-      if (refreshCallback) refreshCallback(); // loadPayments
+      if (refreshCallback) refreshCallback();
     } catch (e) {
       showToast('فشل: ' + e.message, 'error');
     }

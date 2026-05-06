@@ -3,11 +3,9 @@ import { initDB, refreshCaches } from './db.js';
 import { initNavigation, navigateTo } from './navigation.js';
 import { showToast, openModal, lockScroll, unlockScroll, importData } from './utils.js';
 
-// تطبيق الوضع الليلي التلقائي
 applyAutoTheme();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyAutoTheme);
 
-// ربط أحداث القائمة
 document.getElementById('menu-toggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('open');
 });
@@ -33,12 +31,10 @@ document.getElementById('btn-help').addEventListener('click', () => {
   openModal({ title: 'مساعدة', bodyHTML: '<p>نظام الراجحي للمحاسبة - نسخة Offline</p>' });
 });
 
-// ✅ FIXED: Simplified importData call - mergeFn is now handled internally in utils.js
 async function checkPendingImport() {
   const urlParams = new URLSearchParams(window.location.search);
 
   if (urlParams.has('share-import')) {
-    // تأخير قصير للسماح للـ Service Worker بمعالجة الملف
     setTimeout(async () => {
       await importData({
         validateFn: (data) => {
@@ -54,7 +50,6 @@ async function checkPendingImport() {
         }
       });
 
-      // تنظيف URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }, 500);
   }
@@ -66,16 +61,12 @@ async function checkPendingImport() {
   }
 }
 
-// بدء التطبيق
 (async function initApp() {
   try {
     initDB();
     await refreshCaches();
     initNavigation();
-
-    // فحص الاستيراد المعلق
     await checkPendingImport();
-
     navigateTo('dashboard');
     document.getElementById('loading-screen').classList.add('hidden');
   } catch (e) {

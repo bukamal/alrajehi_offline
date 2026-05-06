@@ -8,6 +8,7 @@ import {
   showFormModal
 } from './utils.js';
 import {
+  db,
   apiCall,
   itemsCache,
   unitsCache,
@@ -17,7 +18,7 @@ import {
 
 export async function loadItems() {
   itemsCache.length = 0;
-  const data = await apiCall('/items', 'GET');
+  const data = await db.items.toArray();   // جلب كامل مع إمكانية بحث مفهرس لاحقاً
   itemsCache.push(...data);
 
   const tc = document.getElementById('tab-content');
@@ -38,35 +39,62 @@ export async function loadItems() {
 
 export function renderFilteredItems() {
   const q = (document.getElementById('items-search')?.value || '').toLowerCase();
-  const filtered = itemsCache.filter(i =>
-    (i.name || '').toLowerCase().includes(q)
-  );
   const container = document.getElementById('items-list');
-
-  if (!filtered.length) {
-    container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>';
-    return;
-  }
-
-  let html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
-  filtered.forEach(item => {
-    const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
-    const unitName = baseUnit.name || 'قطعة';
-    html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
-      <td style="font-weight:700;">${item.name}</td>
-      <td>${unitName}</td>
-      <td>${item.quantity || 0}</td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  container.innerHTML = html;
-
-  container.querySelectorAll('.item-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const itemId = parseInt(row.dataset.itemId, 10);
-      showItemDetail(itemId);
+  if (!q) {
+    // عرض الكل (يمكن بقاء الكاش)
+    const filtered = itemsCache;
+    if (!filtered.length) {
+      container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>';
+      return;
+    }
+    let html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
+    filtered.forEach(item => {
+      const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
+      const unitName = baseUnit.name || 'قطعة';
+      html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
+        <td style="font-weight:700;">${item.name}</td>
+        <td>${unitName}</td>
+        <td>${item.quantity || 0}</td>
+      </tr>`;
     });
-  });
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    container.querySelectorAll('.item-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const itemId = parseInt(row.dataset.itemId, 10);
+        showItemDetail(itemId);
+      });
+    });
+  } else {
+    // استخدام الفهرس للبحث الأمامي (startsWithIgnoreCase) ثم فلترة بسيطة
+    db.items.where('name').startsWithIgnoreCase(q).toArray().then(startsWithResults => {
+      // دمج مع الكاش للبحث الذي يحتوي على الكلمة في أي مكان
+      const fullMatch = itemsCache.filter(i => (i.name || '').toLowerCase().includes(q));
+      const unique = Array.from(new Map([...startsWithResults, ...fullMatch].map(i => [i.id, i])).values());
+      if (!unique.length) {
+        container.innerHTML = '<div class="empty-state"><h3>لا توجد مواد</h3></div>';
+        return;
+      }
+      let html = '<div class="table-wrap"><table class="table"><thead><tr><th>المادة</th><th>الوحدة الأساسية</th><th>متوفر</th></tr></thead><tbody>';
+      unique.forEach(item => {
+        const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
+        const unitName = baseUnit.name || 'قطعة';
+        html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
+          <td style="font-weight:700;">${item.name}</td>
+          <td>${unitName}</td>
+          <td>${item.quantity || 0}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+      container.querySelectorAll('.item-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const itemId = parseInt(row.dataset.itemId, 10);
+          showItemDetail(itemId);
+        });
+      });
+    });
+  }
 }
 
 export async function getOrCreateUnit(name) {
@@ -75,7 +103,6 @@ export async function getOrCreateUnit(name) {
   if (u) return u.id;
   const res = await apiCall('/definitions?type=unit', 'POST', { name, abbreviation: name });
   u = { id: res.id, name, abbreviation: name };
-  // لم نعد ندفع للكاش يدوياً، بل سنعتمد على loadUnitsSection لاحقاً
   return u.id;
 }
 
@@ -141,7 +168,7 @@ export function showItemDetail(itemId) {
         }
 
         if (!(await confirmDialog(`حذف المادة "${item.name}"؟`))) return;
-        await apiCall('/items?id=' + itemId, 'DELETE');
+        await db.items.delete(itemId);
         showToast('تم الحذف', 'success');
         loadItems();
       } catch (err) {
@@ -153,9 +180,7 @@ export function showItemDetail(itemId) {
 }
 
 export function showAddItemModal() {
-  // نأخذ نسخة محلية من التصنيفات حتى لا نعدّل الكاش العالمي في حالة الإضافة السريعة
   const localCategories = categoriesCache.slice();
-
   const catOpts = localCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
   const body = `
@@ -291,7 +316,6 @@ export function showAddItemModal() {
     try {
       const res = await apiCall('/definitions?type=category', 'POST', { type: 'category', name });
       const newId = res.id;
-      // أضف التصنيف محلياً فقط داخل هذه النافذة، ولا تلمس الكاش العام
       localCategories.push({ id: newId, name });
       const o = document.createElement('option');
       o.value = newId;
@@ -345,7 +369,7 @@ export function showAddItemModal() {
       if (unit === 'u2') quantity = qtyEntered * f2;
       else if (unit === 'u3') quantity = qtyEntered * f3;
 
-      await apiCall('/items', 'POST', {
+      await db.items.add({
         name,
         category_id: container.querySelector('#fm-category_id').value || null,
         base_unit_id: baseUnitId,
@@ -441,7 +465,7 @@ export function showEditItemModal(id) {
 
       if (!values.name) throw new Error('اسم المادة مطلوب');
 
-      await apiCall('/items', 'PUT', { id, ...values });
+      await db.items.update(id, values);
       modal.close();
       showToast('تم التعديل بنجاح', 'success');
       loadItems();

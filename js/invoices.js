@@ -4,16 +4,8 @@ import { db, apiCall, itemsCache, customersCache, suppliersCache, unitsCache, in
 import { checkStockAvailability } from './items.js';
 import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accounting.js';
 
-/**
- * فتح نافذة إنشاء فاتورة (بيع أو شراء) مع دعم:
- * - إضافة بنود ديناميكية
- * - اختيار الوحدات والتحويل بينها
- * - تنبيه المخزون غير الكافي (للمبيعات)
- * - معاملة ذرية لتحديث المخزون والأرصدة عند الحفظ
- */
 export async function showInvoiceModal(type) {
   try {
-    // تأكد من تحميل الكاشات
     customersCache.length = 0;
     suppliersCache.length = 0;
     itemsCache.length = 0;
@@ -294,7 +286,6 @@ export function renderFilteredInvoices() {
       try {
         if (await confirmDialog('حذف الفاتورة؟ سيتم إعادة المخزون وتعديل الأرصدة.')) {
           await deleteInvoice(invId);
-          // ✅ إعادة تحميل القسم من قاعدة البيانات بدلاً من التلاعب المباشر بالكاش
           await loadInvoices();
         }
       } catch (e) {
@@ -349,12 +340,7 @@ export function printInvoice(invoice, options = {}) {
   setTimeout(() => w.print(), 500);
 }
 
-/**
- * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
- * ✅ تم إزالة التلاعب المباشر بالكاش، وسيتم إعادة تحميل القسم بعد الحذف
- */
 export async function deleteInvoice(invId) {
-  // استخدم الكاش فقط للعثور على معلومات الفاتورة قبل حذفها
   const inv = invoicesCache.find(i => i.id == invId);
   if (!inv) {
     showToast('الفاتورة غير موجودة', 'error');
@@ -380,7 +366,6 @@ export async function deleteInvoice(invId) {
       await db.invoices.delete(invId);
     });
 
-    // ✅ لا نقوم بتحديث الكاش هنا، بل سنعيد تحميل القسم من المتصل
     showToast('تم حذف الفاتورة بنجاح', 'success');
   } catch (e) {
     console.error('[Delete Invoice Error]', e);

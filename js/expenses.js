@@ -1,9 +1,9 @@
 import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, showFormModal } from './utils.js';
-import { apiCall } from './db.js';
+import { db } from './db.js';
 
 export async function loadExpenses() {
-  const expenses = await apiCall('/expenses', 'GET');
+  const expenses = await db.expenses.toArray();
   const tc = document.getElementById('tab-content');
   tc.innerHTML = `<div class="card">
       <div class="card-header">
@@ -38,7 +38,7 @@ export async function loadExpenses() {
       initialValues: { expense_date: new Date().toISOString().split('T')[0] },
       onSave: async v => {
         if (!v.amount || parseFloat(v.amount) <= 0) throw new Error('المبلغ مطلوب');
-        return apiCall('/expenses', 'POST', {
+        return db.expenses.add({
           amount: parseFloat(v.amount),
           expense_date: v.expense_date,
           description: v.description

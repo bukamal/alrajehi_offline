@@ -38,7 +38,7 @@
     </div>
   </div>
 
-  <!-- Error Screen (appears automatically if loading fails) -->
+  <!-- Error Screen -->
   <div id="error-screen" style="display:none; position:fixed; inset:0; background:#fff; z-index:99999; color:#dc2626; align-items:flex-start; justify-content:center; font-size:16px; padding:2rem; text-align:center; flex-direction:column; overflow-y:auto;">
     <h2 style="font-size:20px;margin-bottom:16px;">حدث خطأ</h2>
     <pre id="error-details" style="white-space:pre-wrap; word-wrap:break-word; background:#fee2e2; padding:16px; border-radius:8px; text-align:left; max-width:100%; overflow-x:auto;"></pre>
@@ -89,13 +89,11 @@
     </div>
   </div>
 
-  <!-- Auto error display after loading failure -->
   <script>
     (function() {
       var loader = document.getElementById('loading-screen');
       var errorScreen = document.getElementById('error-screen');
       var errorDetails = document.getElementById('error-details');
-
       setTimeout(function() {
         if (loader && !loader.classList.contains('hidden')) {
           loader.style.display = 'none';
@@ -121,7 +119,6 @@
     }
   </script>
 
-  <!-- تحميل الوحدة الرئيسية كنمط ES Module -->
   <script type="module" src="js/app.js"></script>
 
   <div id="debug-log" style="position:fixed; bottom:20px; left:10px; right:10px; max-height:120px; overflow-y:auto; background:rgba(0,0,0,0.9); color:#0f0; font-size:12px; padding:10px; border-radius:10px; z-index:99999; white-space:pre-wrap; font-family:monospace; display:none;"></div>

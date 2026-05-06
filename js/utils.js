@@ -78,7 +78,6 @@ export function confirmDialog(msg) {
   });
 }
 
-// نموذج عام للإضافة/التعديل
 export function showFormModal({ title, fields, initialValues = {}, onSave, onSuccess }) {
   const formId = 'frm-' + Date.now();
   let body = '';
@@ -109,9 +108,6 @@ export function showFormModal({ title, fields, initialValues = {}, onSave, onSuc
   };
 }
 
-/**
- * تطبيق الوضع الليلي تلقائياً حسب إعدادات الجهاز
- */
 export function applyAutoTheme() {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   if (prefersDark) {
@@ -125,25 +121,16 @@ export function applyAutoTheme() {
 // Export / Import - Enhanced for TWA
 // ============================================
 
-/**
- * التحقق مما إذا كان التطبيق يعمل في وضع standalone (TWA/PWA مثبت)
- */
 export function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
          window.navigator.standalone === true ||
          document.referrer.includes('android-app://');
 }
 
-/**
- * التحقق من دعم File System Access API
- */
 export function supportsFileSystemAccess() {
   return 'showOpenFilePicker' in window && 'showSaveFilePicker' in window;
 }
 
-/**
- * 📤 تصدير البيانات - يعمل في المتصفح والـ TWA
- */
 export async function exportData(data, filename = null) {
   const defaultName = `alrajhi-backup-${new Date().toISOString().slice(0, 10)}.json`;
   const finalName = filename || defaultName;
@@ -152,7 +139,6 @@ export async function exportData(data, filename = null) {
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
 
-    // محاولة File System Access API أولاً (Chrome 86+)
     if (supportsFileSystemAccess()) {
       try {
         const handle = await window.showSaveFilePicker({
@@ -173,7 +159,6 @@ export async function exportData(data, filename = null) {
       }
     }
 
-    // Fallback: تحميل تلقائي (يعمل في TWA أيضاً)
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -196,10 +181,6 @@ export async function exportData(data, filename = null) {
   }
 }
 
-/**
- * 📥 استيراد البيانات - يدعم المتصفح + TWA + Share Target
- * ✅ FIXED: Unified signature to match app.js expectations
- */
 export async function importData(options = {}) {
   const {
     onSuccess = null,
@@ -208,7 +189,6 @@ export async function importData(options = {}) {
     mergeFn = null
   } = options;
 
-  // التحقق من استيراد معلّق (من Share Target)
   const pendingFiles = await checkPendingSharedFiles();
   if (pendingFiles && pendingFiles.length > 0) {
     showToast('📁 تم العثور على ملفات للاستيراد', 'info');
@@ -217,19 +197,14 @@ export async function importData(options = {}) {
     return result;
   }
 
-  // في TWA/Standalone: استخدام Web Share Target بدلاً من input file
   if (isStandalone()) {
     showStandaloneImportInstructions();
     return null;
   }
 
-  // في المتصفح العادي: استخدام input file
   return await importViaFileInput({ onSuccess, onError, validateFn, mergeFn });
 }
 
-/**
- * عرض تعليمات الاستيراد في TWA/Standalone
- */
 function showStandaloneImportInstructions() {
   const modal = openModal({
     title: 'استيراد البيانات',
@@ -269,9 +244,6 @@ function showStandaloneImportInstructions() {
   modal.element.querySelector('#imp-close').onclick = () => modal.close();
 }
 
-/**
- * استيراد عبر input file (للمتصفح العادي فقط)
- */
 function importViaFileInput(options) {
   return new Promise((resolve) => {
     const input = document.createElement('input');
@@ -297,9 +269,6 @@ function importViaFileInput(options) {
   });
 }
 
-/**
- * معالجة ملف الاستيراد
- */
 async function processImportFile(file, options) {
   const { onSuccess, onError, validateFn, mergeFn } = options;
 
@@ -318,11 +287,9 @@ async function processImportFile(file, options) {
   try {
     let text;
 
-    // التعامل مع File object أو SharedFileData
     if (file instanceof File || file instanceof Blob) {
       text = await file.text();
     } else if (file.data && Array.isArray(file.data)) {
-      // من Share Target (مصفوفة بايتات)
       const uint8Array = new Uint8Array(file.data);
       text = new TextDecoder().decode(uint8Array);
     } else {
@@ -338,12 +305,10 @@ async function processImportFile(file, options) {
 
     modal.close();
 
-    // التحقق من صحة البيانات
     if (validateFn && !validateFn(data)) {
       throw new Error('ملف النسخ الاحتياطي غير صالح');
     }
 
-    // تأكيد الاستيراد
     const tableCount = Object.keys(data).filter(k => Array.isArray(data[k])).length;
     const recordCount = Object.values(data).reduce((sum, arr) =>
       sum + (Array.isArray(arr) ? arr.length : 0), 0);
@@ -358,7 +323,6 @@ async function processImportFile(file, options) {
       return null;
     }
 
-    // تنفيذ الاستيراد
     if (mergeFn) {
       await mergeFn(data);
     }
@@ -378,9 +342,6 @@ async function processImportFile(file, options) {
   }
 }
 
-/**
- * التحقق من ملفات مُشاركة معلّقة (من Share Target)
- */
 async function checkPendingSharedFiles() {
   return new Promise((resolve) => {
     const request = indexedDB.open('AlrajhiSharedFiles', 1);
@@ -414,9 +375,6 @@ async function checkPendingSharedFiles() {
   });
 }
 
-/**
- * حذف الملفات المُشاركة المعلّقة
- */
 async function clearPendingSharedFiles() {
   return new Promise((resolve) => {
     const request = indexedDB.open('AlrajhiSharedFiles', 1);
@@ -432,48 +390,4 @@ async function clearPendingSharedFiles() {
 
     request.onerror = () => resolve();
   });
-}
-
-/**
- * مشاركة البيانات (للتصدير إلى تطبيقات أخرى في Android)
- */
-export async function shareData(data, filename = null) {
-  const defaultName = `alrajhi-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const finalName = filename || defaultName;
-
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const file = new File([blob], finalName, { type: 'application/json' });
-
-  // محاولة Web Share API أولاً (يعمل في TWA على Android)
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: 'نسخة احتياطية - الراجحي للمحاسبة',
-        text: 'بيانات النظام المحاسبي',
-        files: [file]
-      });
-      showToast('✅ تمت المشاركة', 'success');
-      return true;
-    } catch (err) {
-      if (err.name === 'AbortError') return false;
-      console.warn('[Share] Failed:', err);
-    }
-  }
-
-  // Fallback: تحميل عادي
-  return await exportData(data, finalName);
-}
-
-/**
- * نسخ النص إلى الحافظة
- */
-export async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (err) {
-    console.warn('[Clipboard] Failed:', err);
-    return false;
-  }
 }

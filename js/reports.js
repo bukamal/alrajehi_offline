@@ -8,13 +8,10 @@ import {
   suppliersCache,
   unitsCache,
   invoicesCache,
-  paymentsCache,  // ✅ FIXED: Now imported from db.js
+  paymentsCache,
   categoriesCache
 } from './db.js';
 
-/**
- * عرض صفحة التقارير الرئيسية
- */
 export function loadReports() {
   const tc = document.getElementById('tab-content');
   tc.innerHTML = `
@@ -35,12 +32,9 @@ export function loadReports() {
   document.getElementById('rpt-supp').onclick = loadSupplierStatementForm;
 }
 
-/**
- * ميزان المراجعة
- */
 export async function loadTrialBalance() {
   const invoices = await apiCall('/invoices', 'GET');
-  const expenses = await apiCall('/expenses', 'GET');
+  const expenses = await db.expenses.toArray();
   const totalSales = invoices.filter(i => i.type === 'sale').reduce((s, i) => s + i.total, 0);
   const totalPurchases = invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.total, 0);
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
@@ -62,12 +56,9 @@ export async function loadTrialBalance() {
   document.getElementById('back-from-trial').onclick = () => loadReports();
 }
 
-/**
- * قائمة الدخل
- */
 export async function loadIncomeStatement() {
   const invoices = await apiCall('/invoices', 'GET');
-  const expenses = await apiCall('/expenses', 'GET');
+  const expenses = await db.expenses.toArray();
   const totalSales = invoices.filter(i => i.type === 'sale').reduce((s, i) => s + i.total, 0);
   const totalPurchases = invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.total, 0);
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
@@ -75,7 +66,7 @@ export async function loadIncomeStatement() {
 
   document.getElementById('tab-content').innerHTML = `
     <div class="card">
-      <button class="btn btn-secondary btn-sm" id="back-from-income" style="margin-bottom:12px;"> 🔙 رجوع</button>
+      <button class="btn btn-secondary btn-sm" id="back-from-income" style="margin-bottom:12px;">🔙 رجوع</button>
       <h3>قائمة الدخل</h3>
       <p>الإيرادات: ${formatNumber(totalSales)}</p>
       <p>تكلفة المبيعات: ${formatNumber(totalPurchases)}</p>
@@ -87,9 +78,6 @@ export async function loadIncomeStatement() {
   document.getElementById('back-from-income').onclick = () => loadReports();
 }
 
-/**
- * الميزانية العمومية المبسطة
- */
 export async function loadBalanceSheet() {
   const customers = await apiCall('/customers', 'GET');
   const suppliers = await apiCall('/suppliers', 'GET');
@@ -107,9 +95,6 @@ export async function loadBalanceSheet() {
   document.getElementById('back-from-balance').onclick = () => loadReports();
 }
 
-/**
- * نموذج كشف حساب عميل
- */
 export async function loadCustomerStatementForm() {
   const customers = await apiCall('/customers', 'GET');
   const opts = customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -128,7 +113,7 @@ export async function loadCustomerStatementForm() {
   document.getElementById('btn-show-cust').onclick = async () => {
     const id = document.getElementById('cust-sel').value;
     const invoices = await apiCall('/invoices', 'GET');
-    const payments = await apiCall('/payments', 'GET');
+    const payments = await db.payments.toArray();
     const custInvs = invoices.filter(i => i.customer_id == id);
     const custPmts = payments.filter(p => p.customer_id == id);
 
@@ -147,9 +132,6 @@ export async function loadCustomerStatementForm() {
   };
 }
 
-/**
- * نموذج كشف حساب مورد
- */
 export async function loadSupplierStatementForm() {
   const suppliers = await apiCall('/suppliers', 'GET');
   const opts = suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
@@ -168,7 +150,7 @@ export async function loadSupplierStatementForm() {
   document.getElementById('btn-show-supp').onclick = async () => {
     const id = document.getElementById('supp-sel').value;
     const invoices = await apiCall('/invoices', 'GET');
-    const payments = await apiCall('/payments', 'GET');
+    const payments = await db.payments.toArray();
     const suppInvs = invoices.filter(i => i.supplier_id == id);
     const suppPmts = payments.filter(p => p.supplier_id == id);
 
@@ -187,14 +169,11 @@ export async function loadSupplierStatementForm() {
   };
 }
 
-/**
- * لوحة التحكم (نظرة عامة + أزرار تصدير/استيراد)
- */
 export async function loadDashboard() {
   const invoices = await apiCall('/invoices', 'GET');
   const totalSales = invoices.filter(i => i.type === 'sale').reduce((s, i) => s + i.total, 0);
   const totalPurchases = invoices.filter(i => i.type === 'purchase').reduce((s, i) => s + i.total, 0);
-  const expenses = await apiCall('/expenses', 'GET');
+  const expenses = await db.expenses.toArray();
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
   const net = totalSales - totalPurchases - totalExpenses;
 
@@ -223,10 +202,6 @@ export async function loadDashboard() {
   };
 }
 
-/* ============================================================
-   تصدير البيانات — نسخة محسّنة مع fallback شاملة
-   ============================================================ */
-
 const EXPORT_TABLES = ['items', 'customers', 'suppliers', 'categories', 'units', 'invoices', 'invoiceLines', 'payments', 'expenses'];
 const TABLE_LABELS = {
   items: 'المواد',
@@ -240,12 +215,10 @@ const TABLE_LABELS = {
   expenses: 'المصاريف'
 };
 
-/** هل المتصفح يدعم File System Access API؟ */
 function supportsFilePicker() {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 }
 
-/** تحميل ملف عبر الرابط التقليدي (fallback) */
 function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -259,7 +232,6 @@ function downloadBlob(blob, fileName) {
   }, 100);
 }
 
-/** نسخ النص إلى الحافظة (fallback إضافي للهاتف) */
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -269,11 +241,7 @@ async function copyToClipboard(text) {
   }
 }
 
-/**
- * تصدير جميع البيانات إلى ملف JSON
- */
 export async function showExportDialog() {
-  // 1) جمع الإحصائيات
   const stats = await Promise.all(
     EXPORT_TABLES.map(async t => {
       const rows = await db[t].toArray();
@@ -313,13 +281,11 @@ export async function showExportDialog() {
 
   modal.element.querySelector('#exp-cancel').onclick = () => modal.close();
 
-  // التصدير العادي
   modal.element.querySelector('#exp-confirm').onclick = async () => {
     modal.close();
     await doExport(stats);
   };
 
-  // نسخ للحافظة (fallback للهاتف)
   const copyBtn = modal.element.querySelector('#exp-copy');
   if (copyBtn) {
     copyBtn.onclick = async () => {
@@ -333,7 +299,6 @@ export async function showExportDialog() {
   }
 }
 
-/** تنفيذ التصدير الفعلي */
 async function doExport(stats) {
   const data = {};
   stats.forEach(s => { data[s.table] = s.rows; });
@@ -342,7 +307,6 @@ async function doExport(stats) {
   const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
   const fileName = `alrajhi-backup-${new Date().toISOString().slice(0, 10)}.json`;
 
-  // محاولة File System Access API أولاً
   if (supportsFilePicker()) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -358,29 +322,18 @@ async function doExport(stats) {
       showToast(`✅ تم حفظ الملف: ${fileName}`, 'success');
       return;
     } catch (err) {
-      if (err.name === 'AbortError') return; // المستخدم ألغى
+      if (err.name === 'AbortError') return;
       console.warn('[Export] File Picker failed, falling back:', err);
-      // لا تُرجع خطأ، استمر للـ fallback
     }
   }
 
-  // Fallback: تحميل تلقائي
   downloadBlob(blob, fileName);
   showToast(`✅ تم تنزيل "${fileName}"`, 'success');
 }
 
-/* ============================================================
-   استيراد البيانات — نسخة محسّنة
-   ============================================================ */
-
-/**
- * استيراد البيانات من ملف JSON
- * ✅ FIXED: Now exported so it can be used by loadDashboard
- */
 export async function handleImport(file) {
   if (!file) return;
 
-  // التحقق من نوع الملف
   if (!file.name.endsWith('.json') && file.type !== 'application/json') {
     showToast('❌ يرجى اختيار ملف JSON فقط', 'error');
     return;
@@ -444,7 +397,6 @@ export async function handleImport(file) {
   };
 }
 
-/** تنفيذ الاستيراد الفعلي */
 async function doImport(tableNames, data) {
   const btn = document.getElementById('btn-import');
   if (btn) {
@@ -453,12 +405,10 @@ async function doImport(tableNames, data) {
   }
 
   try {
-    // استخدام معاملة Dexie على جميع الجداول
     const tables = tableNames.map(t => db[t]);
     await db.transaction('rw', tables, async () => {
       for (const table of tableNames) {
         await db[table].clear();
-        // إضافة دفعة واحدة أسرع من إضافة فردية
         if (data[table].length > 0) {
           await db[table].bulkAdd(data[table]);
         }
@@ -466,11 +416,7 @@ async function doImport(tableNames, data) {
     });
 
     showToast('✅ تم استيراد البيانات بنجاح', 'success');
-
-    // تحديث الكاشات
     await refreshAllCaches();
-
-    // إعادة تحميل لوحة التحكم
     loadDashboard();
 
   } catch (e) {
@@ -484,9 +430,6 @@ async function doImport(tableNames, data) {
   }
 }
 
-/** تحديث جميع الكاشات بعد الاستيراد
- * ✅ FIXED: Now uses paymentsCache from db.js
- */
 async function refreshAllCaches() {
   itemsCache.length = 0;
   customersCache.length = 0;
@@ -494,16 +437,16 @@ async function refreshAllCaches() {
   invoicesCache.length = 0;
   categoriesCache.length = 0;
   unitsCache.length = 0;
-  paymentsCache.length = 0;  // ✅ FIXED: Clear payments cache too
+  paymentsCache.length = 0;
 
   const [items, customers, suppliers, invoices, categories, units, payments] = await Promise.all([
-    apiCall('/items', 'GET'),
-    apiCall('/customers', 'GET'),
-    apiCall('/suppliers', 'GET'),
-    apiCall('/invoices', 'GET'),
-    apiCall('/definitions?type=category', 'GET'),
-    apiCall('/definitions?type=unit', 'GET'),
-    apiCall('/payments', 'GET')
+    db.items.toArray(),
+    db.customers.toArray(),
+    db.suppliers.toArray(),
+    apiCall('/invoices', 'GET'),  // يستعمل API المحسن
+    db.categories.toArray(),
+    db.units.toArray(),
+    db.payments.toArray()
   ]);
 
   itemsCache.push(...items);
@@ -512,9 +455,8 @@ async function refreshAllCaches() {
   categoriesCache.push(...categories);
   unitsCache.push(...units);
   invoicesCache.push(...invoices);
-  paymentsCache.push(...payments);  // ✅ FIXED: Populate payments cache
+  paymentsCache.push(...payments);
 
-  // إعادة حساب أرصدة الفواتير
   invoicesCache.forEach(inv => {
     const pmts = payments.filter(p => p.invoice_id == inv.id);
     inv.paid = pmts.reduce((s, p) => s + p.amount, 0);

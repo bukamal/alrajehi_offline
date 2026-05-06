@@ -1,21 +1,17 @@
 import { ICONS } from './constants.js';
 import { showToast, showFormModal, confirmDialog } from './utils.js';
 import {
+  db,
   apiCall,
   customersCache,
   suppliersCache,
   categoriesCache,
   checkCascadeDelete,
-  db
 } from './db.js';
 
-/* =============================================
-   تحميل وعرض قسم عام (عملاء / موردين / تصنيفات)
-   ============================================= */
 export async function loadGenericSection(endpoint, cacheKey) {
   const data = await apiCall(endpoint, 'GET');
 
-  // إعادة بناء الكاش من الصفر
   if (cacheKey === 'customers') {
     customersCache.length = 0;
     customersCache.push(...data);
@@ -61,14 +57,10 @@ export async function loadGenericSection(endpoint, cacheKey) {
   tc.innerHTML = html;
 }
 
-/* =============================================
-   المستمع العالمي الموحد لأزرار add/edit/delete
-   ============================================= */
 document.addEventListener('click', async e => {
   const t = e.target.closest('button');
   if (!t) return;
 
-  // ----- زر الإضافة (عملاء / موردين / تصنيفات) -----
   if (t.classList.contains('add-btn')) {
     const type = t.dataset.type;
     const titles = { customers: 'عميل', suppliers: 'مورد', categories: 'تصنيف' };
@@ -89,17 +81,14 @@ document.addEventListener('click', async e => {
           return apiCall(endpoints[type], 'POST', { name: v.name });
         }
       },
-      onSuccess: () => loadGenericSection(endpoints[type], type) // ← يعيد تحميل القسم بعد الإضافة
+      onSuccess: () => loadGenericSection(endpoints[type], type)
     });
   }
 
-  // ----- زر التعديل -----
   else if (t.classList.contains('edit-btn')) {
     const type = t.dataset.type;
     const id = parseInt(t.dataset.id, 10);
     if (!id) return;
-
-    // الوحدات تُعالج في units.js
     if (type === 'units') return;
 
     const caches = {
@@ -107,18 +96,11 @@ document.addEventListener('click', async e => {
       suppliers: suppliersCache,
       categories: categoriesCache
     };
-    // استخدام == لمقارنة مرنة
     const item = caches[type]?.find(x => x.id == id);
     if (!item) {
       showToast('العنصر غير موجود في الكاش', 'error');
       return;
     }
-
-    const endpoints = {
-      customers: '/customers',
-      suppliers: '/suppliers',
-      categories: '/definitions?type=category'
-    };
 
     showFormModal({
       title: 'تعديل',
@@ -128,14 +110,13 @@ document.addEventListener('click', async e => {
         if (type === 'categories') {
           return apiCall('/definitions?type=category', 'PUT', { type: 'category', id, name: v.name });
         } else {
-          return apiCall(`/${type}`, 'PUT', { id, name: v.name });
+          return db[type].update(id, { name: v.name });
         }
       },
-      onSuccess: () => loadGenericSection(endpoints[type], type) // ← يعيد تحميل القسم بعد التعديل
+      onSuccess: () => loadGenericSection('/' + (type === 'categories' ? 'definitions?type=category' : type), type)
     });
   }
 
-  // ----- زر الحذف (مع فحص العلاقات) -----
   else if (t.classList.contains('delete-btn')) {
     const type = t.dataset.type;
     const id = parseInt(t.dataset.id, 10);
@@ -143,29 +124,21 @@ document.addEventListener('click', async e => {
       showToast('معرّف غير صالح', 'error');
       return;
     }
-
-    // الوحدات تُعالج في units.js
     if (type === 'units') return;
 
-    // العملية بالكامل داخل try...catch
     try {
-      const name = (() => {
-        const caches = {
-          customers: customersCache,
-          suppliers: suppliersCache,
-          categories: categoriesCache
-        };
-        // == لمقارنة مرنة
-        const item = caches[type]?.find(x => x.id == id);
-        return item ? item.name : '';
-      })();
-
+      const caches = {
+        customers: customersCache,
+        suppliers: suppliersCache,
+        categories: categoriesCache
+      };
+      const item = caches[type]?.find(x => x.id == id);
+      const name = item ? item.name : '';
       if (!name) {
         showToast('العنصر غير موجود', 'error');
         return;
       }
 
-      // ---- فحص العلاقات ----
       const { counts } = await checkCascadeDelete(type, id);
 
       if (type === 'customers' || type === 'suppliers') {
@@ -189,18 +162,13 @@ document.addEventListener('click', async e => {
           await db.categories.delete(id);
         });
         showToast('تم حذف التصنيف وإزالته من المواد.', 'success');
-        await loadGenericSection('/definitions?type=category', 'categories'); // ← ينتظر إعادة التحميل
+        await loadGenericSection('/definitions?type=category', 'categories');
         return;
       }
 
       if (!(await confirmDialog(`حذف "${name}"؟`))) return;
 
-      const delUrls = {
-        customers: `/customers?id=${id}`,
-        suppliers: `/suppliers?id=${id}`,
-        categories: `/definitions?type=category&id=${id}`
-      };
-      await apiCall(delUrls[type], 'DELETE');
+      await db[type].delete(id);
       showToast('تم الحذف', 'success');
 
       const endpoints = {
@@ -208,7 +176,7 @@ document.addEventListener('click', async e => {
         suppliers: '/suppliers',
         categories: '/definitions?type=category'
       };
-      await loadGenericSection(endpoints[type], type); // ← ينتظر إعادة التحميل بعد الحذف
+      await loadGenericSection(endpoints[type], type);
       
     } catch (err) {
       console.error('[Delete Error]', err);

@@ -50,14 +50,10 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// ============================================
-// Share Target Handler (Import files in TWA)
-// ============================================
-
+// Share Target Handler
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Handle POST from Share Target
   if (event.request.method === 'POST' && url.searchParams.has('share-target')) {
     event.respondWith(handleShareTarget(event.request));
     return;
@@ -86,20 +82,15 @@ self.addEventListener('fetch', event => {
   );
 });
 
-/**
- * Handle file sharing from other Android apps
- */
 async function handleShareTarget(request) {
   try {
     const formData = await request.formData();
     const files = formData.getAll('import_files');
 
     if (files.length === 0) {
-      // Redirect without files
       return Response.redirect(BASE_PATH + '?share-error=no-files', 303);
     }
 
-    // Store files in temporary IndexedDB for page access
     const fileData = [];
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
@@ -111,10 +102,8 @@ async function handleShareTarget(request) {
       });
     }
 
-    // Store in IndexedDB for later access
     await storeSharedFiles(fileData);
 
-    // Redirect to main page with import flag
     return Response.redirect(BASE_PATH + '?share-import=pending', 303);
 
   } catch (e) {
@@ -123,9 +112,6 @@ async function handleShareTarget(request) {
   }
 }
 
-/**
- * Store shared files in IndexedDB (separate DB from app data)
- */
 async function storeSharedFiles(fileData) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('AlrajhiSharedFiles', 1);
