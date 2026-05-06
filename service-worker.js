@@ -19,6 +19,8 @@ const urlsToCache = [
   BASE_PATH + 'js/expenses.js',
   BASE_PATH + 'js/reports.js',
   BASE_PATH + 'js/navigation.js',
+  BASE_PATH + 'js/generic.js',
+  BASE_PATH + 'js/accounting.js',          // <-- السطر الجديد
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
   'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js'
 ];
