@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alrajhi-offline-v5';
+const CACHE_NAME = 'alrajhi-offline-v6';
 const BASE_PATH = self.location.pathname.replace(/service-worker\.js$/, '');
 
 const urlsToCache = [
@@ -20,7 +20,7 @@ const urlsToCache = [
   BASE_PATH + 'js/reports.js',
   BASE_PATH + 'js/navigation.js',
   BASE_PATH + 'js/generic.js',
-  BASE_PATH + 'js/accounting.js',          // <-- السطر الجديد
+  BASE_PATH + 'js/accouting.js',          // ← الاسم الفعلي على القرص
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
   'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js'
 ];
@@ -52,7 +52,7 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-  
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       const fetchPromise = fetch(event.request)
@@ -68,8 +68,9 @@ self.addEventListener('fetch', event => {
         .catch(() => {
           return cached;
         });
-      
+
       return cached || fetchPromise;
     })
   );
 });
+

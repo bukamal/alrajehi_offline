@@ -2,7 +2,7 @@ import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, openModal, confirmDialog } from './utils.js';
 import { db, apiCall, itemsCache, customersCache, suppliersCache, unitsCache, invoicesCache } from './db.js';
 import { checkStockAvailability } from './items.js';
-import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accounting.js';
+import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accouting.js';
 
 /**
  * فتح نافذة إنشاء فاتورة (بيع أو شراء) مع دعم:
@@ -374,3 +374,4 @@ async function deleteInvoice(invId) {
   const idx = invoicesCache.findIndex(i => i.id === invId);
   if (idx !== -1) invoicesCache.splice(idx, 1);
 }
+

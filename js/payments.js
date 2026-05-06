@@ -1,7 +1,7 @@
 import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, openModal } from './utils.js';
 import { db, apiCall, invoicesCache, customersCache, suppliersCache } from './db.js';
-import { updateEntityBalance } from './accounting.js';
+import { updateEntityBalance } from './accouting.js';
 
 /**
  * عرض قائمة الدفعات مع خيار الإضافة
@@ -129,3 +129,4 @@ async function showAddPaymentModal(refreshCallback) {
     }
   };
 }
+

@@ -44,7 +44,16 @@ document.getElementById('btn-help').addEventListener('click', () => {
     navigateTo('dashboard');
     document.getElementById('loading-screen').classList.add('hidden');
   } catch (e) {
+    console.error('[App Init Error]', e);
     showToast(e.message, 'error');
     document.getElementById('loading-screen').classList.add('hidden');
+    // إظهار تفاصيل الخطأ في شاشة الأخطاء
+    const errScreen = document.getElementById('error-screen');
+    const errDetails = document.getElementById('error-details');
+    if (errScreen && errDetails) {
+      errScreen.style.display = 'flex';
+      errDetails.textContent = e.stack || e.message || 'خطأ غير معروف';
+    }
   }
 })();
+

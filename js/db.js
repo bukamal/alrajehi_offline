@@ -122,10 +122,19 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   } else if (method === 'DELETE') {
     const tbl = table.split('?')[0].replace('/', '');
     if (tbl === 'invoices') await getTable('invoiceLines').where({ invoice_id: id }).delete();
-    await getTable(tbl).delete(id);
+    
+    // إصلاح: معالجة definitions بشكل صحيح
+    if (tbl === 'definitions') {
+      const defType = type || params.get('type');
+      if (defType === 'category') await getTable('categories').delete(id);
+      else if (defType === 'unit') await getTable('units').delete(id);
+      else throw new Error('نوع التعريف غير معروف للحذف');
+    } else {
+      await getTable(tbl).delete(id);
+    }
     return { success: true };
   } else if (method === 'PUT') {
-    let tbl = table.replace('/', '');
+    let tbl = table.split('?')[0].replace('/', '');
     let recordId = id;
     if (!recordId) recordId = body.id;
     if (recordId === undefined || recordId === null) throw new Error('معرّف السجل مطلوب للتعديل');
@@ -218,3 +227,4 @@ export async function performCascadeDelete(table, id) {
     await getTable(table).delete(id);
   });
 }
+
