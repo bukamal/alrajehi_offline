@@ -8,46 +8,46 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>الراجحي للمحاسبة</title>
 <script>
-  // سجل التتبع (debug) سيكون ظاهراً للأسفل
-  var debugEl = document.getElementById('debug-log');
-  if (debugEl) {
-    debugEl.style.display = 'block';
-    // اعتراض console.log المبكر
-    var _log = console.log;
-    console.log = function() {
-      var msg = Array.from(arguments).join(' ');
-      debugEl.textContent += '[LOG] ' + msg + '\n';
-      _log.apply(console, arguments);
-    };
-    // اعتراض الأخطاء
-    window.onerror = function(msg, url, line, col, error) {
-      debugEl.textContent += '[ERROR] ' + msg + ' (سطر ' + line + ')\n';
-      return false;
-    };
-  }
-
-  // تعريف دالة لإظهار الخطأ إذا فشل تحميل المكتبات
-  function showLibError(missing) {
-    var loader = document.getElementById('loading-screen');
-    if (loader) loader.style.display = 'none';
-    var errorScreen = document.getElementById('error-screen');
-    if (errorScreen) {
-      errorScreen.style.display = 'flex';
-      document.getElementById('error-details').textContent =
-        'المكتبات التالية لم تُحمَّل:\n' + missing.join('\n') +
-        '\n\nتأكد من وجود الملفات في نفس مجلد index.html.';
+  // تفعيل debug-log منذ البداية
+  (function() {
+    var debugEl = document.getElementById('debug-log');
+    if (debugEl) {
+      debugEl.style.display = 'block';
+      // اعتراض console.log
+      var originalLog = console.log;
+      console.log = function() {
+        var msg = Array.from(arguments).join(' ');
+        debugEl.textContent += '[LOG] ' + msg + '\n';
+        debugEl.scrollTop = debugEl.scrollHeight;
+        originalLog.apply(console, arguments);
+      };
+      // اعتراض الأخطاء
+      window.onerror = function(msg, url, line, col, error) {
+        debugEl.textContent += '[ERROR] ' + msg + ' (سطر ' + line + ')\n';
+        debugEl.scrollTop = debugEl.scrollHeight;
+        return false;
+      };
+      console.log('debug-log مفعل');
     }
-  }
 
-  // فحص تحميل Dexie و Chart (بعد تحميلهما)
-  window.addEventListener('load', function() {
-    var missing = [];
-    if (typeof Dexie === 'undefined') missing.push('Dexie.js');
-    if (typeof Chart === 'undefined') missing.push('Chart.js');
-    if (missing.length > 0) {
-      showLibError(missing);
-    }
-  });
+    // التحقق من المكتبات بعد تحميل الصفحة
+    window.addEventListener('load', function() {
+      var missing = [];
+      if (typeof Dexie === 'undefined') missing.push('Dexie.js');
+      if (typeof Chart === 'undefined') {
+        console.warn('Chart.js غير محمل - سيتم تعطيل المخططات');
+        // لا نوقف التطبيق، فقط ننشئ كائن وهمي
+        window.Chart = function() {};
+      }
+      if (missing.length > 0 && missing.indexOf('Dexie.js') >= 0) {
+        // Dexie ضروري - نوقف التحميل
+        document.getElementById('loading-screen').style.display = 'none';
+        var errScreen = document.getElementById('error-screen');
+        errScreen.style.display = 'flex';
+        document.getElementById('error-details').textContent = 'Dexie.js مفقودة. لا يمكن تشغيل التطبيق.';
+      }
+    });
+  })();
 </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

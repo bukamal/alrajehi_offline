@@ -1,48 +1,46 @@
 /* الراجحي للمحاسبة - Offline PWA v2.0 - الجزء 1 من 10 */
 (function() {
   'use strict';
-  // التحقق من وجود Dexie و Chart.js قبل تشغيل التطبيق
-  var missing = [];
-  if (typeof Dexie === 'undefined') missing.push('Dexie.js');
-  if (typeof Chart === 'undefined') missing.push('Chart.js');
-
-  if (missing.length > 0) {
-    // إظهار رسالة واضحة بدلاً من التوقف التام
-    document.getElementById('loading-screen')?.classList.add('hidden');
-    var errorScreen = document.getElementById('error-screen');
-    if (errorScreen) {
-      errorScreen.style.display = 'flex';
-      document.getElementById('error-details').textContent =
-        'المكتبات التالية لم تُحمَّل:\n' + missing.join('\n') +
-        '\n\nتأكد من وجود الملفات في نفس مجلد index.html أو تحقق من اتصال الانترنت.';
-    }
-    throw new Error('Missing dependencies: ' + missing.join(', '));
-  }
-
-// تفعيل debug-log (إن لم يكن مُفعّلاً)
+// حماية شاملة: تسجيل أي خطأ في debug-log
 var debugEl = document.getElementById('debug-log');
-if (debugEl) {
-  debugEl.style.display = 'block';
-  console.log('app.js بدأ التحميل');
-}
-
-// التحقق من وجود Dexie و Chart (مرة أخرى للتأكيد)
-if (typeof Dexie === 'undefined' || typeof Chart === 'undefined') {
-  var missing = [];
-  if (typeof Dexie === 'undefined') missing.push('Dexie');
-  if (typeof Chart === 'undefined') missing.push('Chart');
-  console.error('مكتبات مفقودة: ' + missing.join(', '));
-  // إخفاء شاشة التحميل وإظهار خطأ (يمكن استخدام الدالة المعرفة في HTML)
-  var loader = document.getElementById('loading-screen');
-  if (loader) loader.style.display = 'none';
-  var errorScreen = document.getElementById('error-screen');
-  if (errorScreen) {
-    errorScreen.style.display = 'flex';
-    document.getElementById('error-details').textContent = 'مكتبات مفقودة: ' + missing.join(', ');
+function logDebug(msg) {
+  if (debugEl) {
+    debugEl.textContent += msg + '\n';
+    debugEl.scrollTop = debugEl.scrollHeight;
   }
-  throw new Error('Missing libraries');
+  console.log(msg);
 }
 
+// تأكيد وجود Dexie
+if (typeof Dexie === 'undefined') {
+  logDebug('خطأ: Dexie غير موجود - توقف التطبيق');
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('error-screen').style.display = 'flex';
+  throw new Error('Dexie missing');
+} else {
+  logDebug('Dexie محمل بنجاح');
+}
+
+// بدء التطبيق مع حماية من الأخطاء
+(async function() {
+  try {
+    // تعريف قاعدة البيانات (نفس كودك السابق)
+    const db = new Dexie('AlrajhiDBv4');
+    // ... (باقي تعريف db)
+    
+    // استدعاء initApp مع معالجة الأخطاء
+    await initApp();
+  } catch (e) {
+    logDebug('فشل في بدء التطبيق: ' + e.message + ' - ' + (e.stack || ''));
+    document.getElementById('loading-screen').style.display = 'none';
+    // محاولة عرض شاشة الخطأ
+    var errScreen = document.getElementById('error-screen');
+    if (errScreen) {
+      errScreen.style.display = 'flex';
+      document.getElementById('error-details').textContent = 'خطأ: ' + e.message;
+    }
+  }
+})();
 // ... بقية كود app.js (داخل IIFE الرئيسي)
   const ICONS = {
     home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
