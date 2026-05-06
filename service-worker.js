@@ -6,8 +6,8 @@ const urlsToCache = [
   BASE_PATH + 'index.html',
   BASE_PATH + 'style.css',
   BASE_PATH + 'manifest.json',
-  BASE_PATH + 'icon-192.png',
-  BASE_PATH + 'icon-512.png',
+  BASE_PATH + 'icons/icon-192.png',
+  BASE_PATH + 'icons/icon-512.png',
   BASE_PATH + 'app.js',
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap',
   'dexie.min.js'
