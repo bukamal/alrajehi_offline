@@ -73,7 +73,7 @@ export async function loadIncomeStatement() {
 
   document.getElementById('tab-content').innerHTML = `
     <div class="card">
-      <button class="btn btn-secondary btn-sm" id="back-from-income" style="margin-bottom:12px;">🔙 رجوع</button>
+      <button class="btn btn-secondary btn-sm" id="back-from-income" style="margin-bottom:12px;"> 🔙 رجوع</button>
       <h3>قائمة الدخل</h3>
       <p>الإيرادات: ${formatNumber(totalSales)}</p>
       <p>تكلفة المبيعات: ${formatNumber(totalPurchases)}</p>
@@ -130,9 +130,16 @@ export async function loadCustomerStatementForm() {
     const custInvs = invoices.filter(i => i.customer_id == id);
     const custPmts = payments.filter(p => p.customer_id == id);
 
-    let html = '<div class="table-wrap"><table class="table"><thead><tr><th>التاريخ</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>';
-    custInvs.forEach(i => html += `<tr><td>${formatDate(i.date)}</td><td>فاتورة ${i.reference || ''}</td><td>${formatNumber(i.total)}</td></tr>`);
-    custPmts.forEach(p => html += `<tr><td>${formatDate(p.payment_date)}</td><td>دفعة</td><td style="color:var(--success);">-${formatNumber(p.amount)}</td></tr>`);
+    let html = '<div class="table-wrap"><table class="table"><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>';
+    let balance = 0;
+    custInvs.forEach(i => {
+      balance += i.total;
+      html += `<tr><td>${formatDate(i.date)}</td><td>فاتورة ${i.reference || ''}</td><td>${formatNumber(i.total)}</td><td>-</td><td>${formatNumber(balance)}</td></tr>`;
+    });
+    custPmts.forEach(p => {
+      balance -= p.amount;
+      html += `<tr><td>${formatDate(p.payment_date)}</td><td>دفعة</td><td>-</td><td style="color:var(--success);">${formatNumber(p.amount)}</td><td>${formatNumber(balance)}</td></tr>`;
+    });
     html += '</tbody></table></div>';
     document.getElementById('stmt-result').innerHTML = html;
   };
@@ -163,9 +170,16 @@ export async function loadSupplierStatementForm() {
     const suppInvs = invoices.filter(i => i.supplier_id == id);
     const suppPmts = payments.filter(p => p.supplier_id == id);
 
-    let html = '<div class="table-wrap"><table class="table"><thead><tr><th>التاريخ</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>';
-    suppInvs.forEach(i => html += `<tr><td>${formatDate(i.date)}</td><td>فاتورة ${i.reference || ''}</td><td>${formatNumber(i.total)}</td></tr>`);
-    suppPmts.forEach(p => html += `<tr><td>${formatDate(p.payment_date)}</td><td>دفعة</td><td style="color:var(--danger);">-${formatNumber(p.amount)}</td></tr>`);
+    let html = '<div class="table-wrap"><table class="table"><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>';
+    let balance = 0;
+    suppInvs.forEach(i => {
+      balance += i.total;
+      html += `<tr><td>${formatDate(i.date)}</td><td>فاتورة ${i.reference || ''}</td><td>${formatNumber(i.total)}</td><td>-</td><td>${formatNumber(balance)}</td></tr>`;
+    });
+    suppPmts.forEach(p => {
+      balance -= p.amount;
+      html += `<tr><td>${formatDate(p.payment_date)}</td><td>دفعة</td><td>-</td><td style="color:var(--danger);">${formatNumber(p.amount)}</td><td>${formatNumber(balance)}</td></tr>`;
+    });
     html += '</tbody></table></div>';
     document.getElementById('stmt-result').innerHTML = html;
   };
@@ -201,155 +215,303 @@ export async function loadDashboard() {
   document.getElementById('btn-import').onclick = () => {
     const inp = document.createElement('input');
     inp.type = 'file';
-    inp.accept = '.json';
+    inp.accept = '.json,application/json';
     inp.onchange = e => handleImport(e.target.files[0]);
     inp.click();
   };
+}
+
+/* ============================================================
+   تصدير البيانات — نسخة محسّنة مع fallback شاملة
+   ============================================================ */
+
+const EXPORT_TABLES = ['items', 'customers', 'suppliers', 'categories', 'units', 'invoices', 'invoiceLines', 'payments', 'expenses'];
+const TABLE_LABELS = {
+  items: 'المواد',
+  customers: 'العملاء',
+  suppliers: 'الموردين',
+  categories: 'التصنيفات',
+  units: 'الوحدات',
+  invoices: 'الفواتير',
+  invoiceLines: 'بنود الفواتير',
+  payments: 'الدفعات',
+  expenses: 'المصاريف'
+};
+
+/** هل المتصفح يدعم File System Access API؟ */
+function supportsFilePicker() {
+  return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+}
+
+/** تحميل ملف عبر الرابط التقليدي (fallback) */
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+/** نسخ النص إلى الحافظة (fallback إضافي للهاتف) */
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * تصدير جميع البيانات إلى ملف JSON
  */
 export async function showExportDialog() {
-  const tables = ['items', 'customers', 'suppliers', 'categories', 'units', 'invoices', 'invoiceLines', 'payments', 'expenses'];
-  const names = {
-    items: 'المواد',
-    customers: 'العملاء',
-    suppliers: 'الموردين',
-    categories: 'التصنيفات',
-    units: 'الوحدات',
-    invoices: 'الفواتير',
-    invoiceLines: 'بنود الفواتير',
-    payments: 'الدفعات',
-    expenses: 'المصاريف'
-  };
+  // 1) جمع الإحصائيات
+  const stats = await Promise.all(
+    EXPORT_TABLES.map(async t => {
+      const rows = await db[t].toArray();
+      return { table: t, count: rows.length, rows };
+    })
+  );
 
-  const statsHTML = (await Promise.all(tables.map(async t => {
-    const data = await db[t].toArray();
-    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span>${names[t]}</span><span style="font-weight:700;">${data.length} سجل</span></div>`;
-  }))).join('');
+  const statsHTML = stats
+    .map(s => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span>${TABLE_LABELS[s.table]}</span>
+      <span style="font-weight:700;">${s.count} سجل</span>
+    </div>`)
+    .join('');
 
-  const supportsFilePicker = 'showSaveFilePicker' in window;
+  const totalRecords = stats.reduce((sum, s) => sum + s.count, 0);
+  const hasData = totalRecords > 0;
 
   const modal = openModal({
     title: 'تصدير البيانات',
     bodyHTML: `
-      <p style="margin-bottom:12px;color:var(--text-secondary);">سيتم تصدير جميع بياناتك إلى ملف JSON.</p>
+      <p style="margin-bottom:12px;color:var(--text-secondary);">
+        ${hasData ? 'سيتم تصدير جميع بياناتك إلى ملف JSON.' : '⚠️ لا توجد بيانات للتصدير.'}
+      </p>
       <div style="background:var(--bg);border-radius:12px;padding:12px;margin-bottom:16px;">
-        <div style="font-weight:700;margin-bottom:8px;">محتوى التصدير</div>${statsHTML}
+        <div style="font-weight:700;margin-bottom:8px;">محتوى التصدير (${totalRecords} سجل)</div>
+        ${statsHTML}
       </div>
-      <p style="font-size:13px;color:var(--text-muted);">${supportsFilePicker ? '💡 المتصفح يدعم اختيار مكان الحفظ.' : '⚠️ سيتم الحفظ في مجلد "التنزيلات" الافتراضي.'}</p>`,
-    footerHTML: `<button class="btn btn-secondary" id="exp-cancel">إلغاء</button><button class="btn btn-primary" id="exp-confirm">📥 بدء التصدير</button>`
+      <p style="font-size:13px;color:var(--text-muted);">
+        ${supportsFilePicker() ? '💡 يمكنك اختيار مكان الحفظ.' : '⚠️ سيتم الحفظ في مجلد التنزيلات.'}
+      </p>`,
+    footerHTML: `
+      <button class="btn btn-secondary" id="exp-cancel">إلغاء</button>
+      <button class="btn btn-primary" id="exp-confirm" ${!hasData ? 'disabled' : ''}>📥 بدء التصدير</button>
+      ${supportsFilePicker() ? '' : '<button class="btn btn-secondary" id="exp-copy">📋 نسخ للحافظة</button>'}
+    `
   });
 
   modal.element.querySelector('#exp-cancel').onclick = () => modal.close();
+
+  // التصدير العادي
   modal.element.querySelector('#exp-confirm').onclick = async () => {
     modal.close();
-    const data = {};
-    for (const t of tables) data[t] = await db[t].toArray();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const fileName = `alrajhi-backup-${new Date().toISOString().slice(0, 10)}.json`;
-
-    if (supportsFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{ description: 'ملف JSON', accept: { 'application/json': ['.json'] } }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        showToast(`✅ تم حفظ الملف بنجاح: ${fileName}`, 'success');
-      } catch (err) {
-        if (err.name !== 'AbortError') showToast('فشل التصدير: ' + err.message, 'error');
-      }
-    } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fileName;
-      a.click();
-      showToast(`✅ تم تنزيل "${fileName}" إلى مجلد التنزيلات`, 'success');
-    }
+    await doExport(stats);
   };
+
+  // نسخ للحافظة (fallback للهاتف)
+  const copyBtn = modal.element.querySelector('#exp-copy');
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      const data = {};
+      stats.forEach(s => { data[s.table] = s.rows; });
+      const json = JSON.stringify(data, null, 2);
+      const ok = await copyToClipboard(json);
+      showToast(ok ? '✅ تم نسخ البيانات للحافظة' : '❌ فشل النسخ', ok ? 'success' : 'error');
+      modal.close();
+    };
+  }
 }
 
+/** تنفيذ التصدير الفعلي */
+async function doExport(stats) {
+  const data = {};
+  stats.forEach(s => { data[s.table] = s.rows; });
+
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  const fileName = `alrajhi-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+  // محاولة File System Access API أولاً
+  if (supportsFilePicker()) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{
+          description: 'ملف JSON',
+          accept: { 'application/json': ['.json'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showToast(`✅ تم حفظ الملف: ${fileName}`, 'success');
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // المستخدم ألغى
+      console.warn('[Export] File Picker failed, falling back:', err);
+      // لا تُرجع خطأ، استمر للـ fallback
+    }
+  }
+
+  // Fallback: تحميل تلقائي
+  downloadBlob(blob, fileName);
+  showToast(`✅ تم تنزيل "${fileName}"`, 'success');
+}
+
+/* ============================================================
+   استيراد البيانات — نسخة محسّنة
+   ============================================================ */
+
 /**
- * استيراد البيانات من ملف JSON مع معاملة ذرية
+ * استيراد البيانات من ملف JSON
  */
 export async function handleImport(file) {
   if (!file) return;
+
+  // التحقق من نوع الملف
+  if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+    showToast('❌ يرجى اختيار ملف JSON فقط', 'error');
+    return;
+  }
+
+  let data;
   try {
     const text = await file.text();
-    const data = JSON.parse(text);
-    if (typeof data !== 'object' || Array.isArray(data)) throw new Error('تنسيق الملف غير صحيح');
+    data = JSON.parse(text);
+  } catch (e) {
+    showToast('❌ الملف تالف أو ليس JSON صالح: ' + e.message, 'error');
+    return;
+  }
 
-    const priorityOrder = ['categories', 'units', 'customers', 'suppliers', 'items', 'invoices', 'invoiceLines', 'payments', 'expenses'];
-    const sortedTables = Object.keys(data).sort((a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
-    if (!sortedTables.length) throw new Error('الملف فارغ');
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    showToast('❌ تنسيق الملف غير صحيح (يجب أن يكون كائن JSON)', 'error');
+    return;
+  }
 
-    let totalRecords = 0;
-    const tableDetails = sortedTables.map(t => {
-      const count = Array.isArray(data[t]) ? data[t].length : 0;
-      totalRecords += count;
-      return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span>${t}</span><span style="font-weight:700;">${count} سجل</span></div>`;
-    }).join('');
-
-    const modal = openModal({
-      title: 'معاينة ملف الاستيراد',
-      bodyHTML: `
-        <p>تم العثور على <strong>${sortedTables.length} جداول</strong> تحتوي على <strong>${totalRecords} سجل</strong>.</p>
-        <div style="background:var(--bg);border-radius:12px;padding:12px;margin-bottom:16px;">${tableDetails}</div>
-        <p style="color:var(--danger);">⚠️ تحذير: سيتم <strong>مسح جميع بياناتك الحالية</strong> واستبدالها بهذا الملف.</p>`,
-      footerHTML: `<button class="btn btn-secondary" id="imp-cancel">إلغاء</button><button class="btn btn-danger" id="imp-confirm">استيراد واستبدال</button>`
+  const priorityOrder = ['categories', 'units', 'customers', 'suppliers', 'items', 'invoices', 'invoiceLines', 'payments', 'expenses'];
+  const sortedTables = Object.keys(data)
+    .filter(k => Array.isArray(data[k]))
+    .sort((a, b) => {
+      const ia = priorityOrder.indexOf(a);
+      const ib = priorityOrder.indexOf(b);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     });
 
-    modal.element.querySelector('#imp-cancel').onclick = () => modal.close();
+  if (!sortedTables.length) {
+    showToast('❌ الملف لا يحتوي على بيانات', 'error');
+    return;
+  }
 
-    modal.element.querySelector('#imp-confirm').onclick = async () => {
-      modal.close();
-      const tableNames = sortedTables.filter(t => Array.isArray(data[t]));
-      try {
-        await db.transaction('rw', tableNames, async () => {
-          for (const table of tableNames) {
-            const tableObj = db[table];
-            await tableObj.clear();
-            for (const row of data[table]) await tableObj.add(row);
-          }
-        });
-        showToast('تم استيراد البيانات بنجاح', 'success');
-      } catch (innerError) {
-        showToast('فشل الاستيراد: ' + innerError.message, 'error');
-        return;
+  const totalRecords = sortedTables.reduce((sum, t) => sum + data[t].length, 0);
+
+  const tableDetails = sortedTables.map(t => {
+    const label = TABLE_LABELS[t] || t;
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span>${label}</span>
+      <span style="font-weight:700;">${data[t].length} سجل</span>
+    </div>`;
+  }).join('');
+
+  const modal = openModal({
+    title: 'معاينة ملف الاستيراد',
+    bodyHTML: `
+      <p>تم العثور على <strong>${sortedTables.length} جداول</strong> تحتوي على <strong>${totalRecords} سجل</strong>.</p>
+      <div style="background:var(--bg);border-radius:12px;padding:12px;margin-bottom:16px;">${tableDetails}</div>
+      <p style="color:var(--danger);">⚠️ تحذير: سيتم <strong>مسح جميع بياناتك الحالية</strong> واستبدالها بهذا الملف.</p>`,
+    footerHTML: `
+      <button class="btn btn-secondary" id="imp-cancel">إلغاء</button>
+      <button class="btn btn-danger" id="imp-confirm">استيراد واستبدال</button>
+    `
+  });
+
+  modal.element.querySelector('#imp-cancel').onclick = () => modal.close();
+
+  modal.element.querySelector('#imp-confirm').onclick = async () => {
+    modal.close();
+    await doImport(sortedTables, data);
+  };
+}
+
+/** تنفيذ الاستيراد الفعلي */
+async function doImport(tableNames, data) {
+  const btn = document.getElementById('btn-import');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ جاري الاستيراد...';
+  }
+
+  try {
+    // استخدام معاملة Dexie على جميع الجداول
+    const tables = tableNames.map(t => db[t]);
+    await db.transaction('rw', tables, async () => {
+      for (const table of tableNames) {
+        await db[table].clear();
+        // إضافة دفعة واحدة أسرع من إضافة فردية
+        if (data[table].length > 0) {
+          await db[table].bulkAdd(data[table]);
+        }
       }
+    });
 
-      // تحديث جميع الكاشات
-      [itemsCache.length, customersCache.length, suppliersCache.length, invoicesCache.length, categoriesCache.length, unitsCache.length] = [0, 0, 0, 0, 0, 0];
-      const [items, customers, suppliers, invoices, categories, units, payments] = await Promise.all([
-        apiCall('/items', 'GET'),
-        apiCall('/customers', 'GET'),
-        apiCall('/suppliers', 'GET'),
-        apiCall('/invoices', 'GET'),
-        apiCall('/definitions?type=category', 'GET'),
-        apiCall('/definitions?type=unit', 'GET'),
-        apiCall('/payments', 'GET')
-      ]);
-      itemsCache.push(...items);
-      customersCache.push(...customers);
-      suppliersCache.push(...suppliers);
-      categoriesCache.push(...categories);
-      unitsCache.push(...units);
-      invoicesCache.push(...invoices);
+    showToast('✅ تم استيراد البيانات بنجاح', 'success');
 
-      // إعادة حساب الأرصدة
-      invoicesCache.forEach(inv => {
-        const pmts = payments.filter(p => p.invoice_id == inv.id);
-        inv.paid = pmts.reduce((s, p) => s + p.amount, 0);
-        inv.balance = inv.total - inv.paid;
-      });
+    // تحديث الكاشات
+    await refreshAllCaches();
 
-      loadDashboard();
-    };
+    // إعادة تحميل لوحة التحكم
+    loadDashboard();
+
   } catch (e) {
-    showToast('فشل استيراد الملف: ' + e.message, 'error');
+    console.error('[Import Error]', e);
+    showToast('❌ فشل الاستيراد: ' + e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '📥 استيراد البيانات';
+    }
   }
 }
+
+/** تحديث جميع الكاشات بعد الاستيراد */
+async function refreshAllCaches() {
+  itemsCache.length = 0;
+  customersCache.length = 0;
+  suppliersCache.length = 0;
+  invoicesCache.length = 0;
+  categoriesCache.length = 0;
+  unitsCache.length = 0;
+
+  const [items, customers, suppliers, invoices, categories, units, payments] = await Promise.all([
+    apiCall('/items', 'GET'),
+    apiCall('/customers', 'GET'),
+    apiCall('/suppliers', 'GET'),
+    apiCall('/invoices', 'GET'),
+    apiCall('/definitions?type=category', 'GET'),
+    apiCall('/definitions?type=unit', 'GET'),
+    apiCall('/payments', 'GET')
+  ]);
+
+  itemsCache.push(...items);
+  customersCache.push(...customers);
+  suppliersCache.push(...suppliers);
+  categoriesCache.push(...categories);
+  unitsCache.push(...units);
+  invoicesCache.push(...invoices);
+
+  // إعادة حساب أرصدة الفواتير
+  invoicesCache.forEach(inv => {
+    const pmts = payments.filter(p => p.invoice_id == inv.id);
+    inv.paid = pmts.reduce((s, p) => s + p.amount, 0);
+    inv.balance = inv.total - inv.paid;
+  });
+}
+
