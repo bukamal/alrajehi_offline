@@ -133,7 +133,6 @@ window.showItemDetail = function (itemId) {
   modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
-      // فحص العلاقات قبل الحذف
       const { counts } = await checkCascadeDelete('items', itemId);
       if (counts.invoiceLines > 0) {
         showToast(
@@ -210,7 +209,7 @@ export function showAddItemModal() {
         </select>
       </div>
       <div id="qty-converted" style="font-size:12px;color:var(--text-muted);margin-top:4px;display:none;">
-        = <strong id="qty-base-val">0</strong> قطعة
+        = <strong id="qty-base-val">0</strong> <span id="qty-base-unit-label">قطعة</span>
       </div>
     </div>
     <div class="form-group">
@@ -233,12 +232,22 @@ export function showAddItemModal() {
 
   const container = modal.element;
   const baseNameInput = container.querySelector('#fm-baseUnit');
+  const baseUnitLabel = container.querySelector('#qty-base-unit-label');
   const extraUnitsDiv = container.querySelector('#extra-units');
   const toggleBtn = container.querySelector('#btn-toggle-units');
   const qtyInput = container.querySelector('#fm-quantity');
   const qtyUnit = container.querySelector('#fm-qty-unit');
   const qtyConverted = container.querySelector('#qty-converted');
   const qtyBaseVal = container.querySelector('#qty-base-val');
+
+  // تحديث اسم الوحدة الأساسية في Label التحويل عند تغيير الإدخال
+  const updateBaseUnitLabel = () => {
+    if (baseUnitLabel) {
+      baseUnitLabel.textContent = baseNameInput.value.trim() || 'قطعة';
+    }
+  };
+  baseNameInput.addEventListener('input', updateBaseUnitLabel);
+  updateBaseUnitLabel(); // تهيئة
 
   toggleBtn.onclick = () => {
     const isHidden = extraUnitsDiv.style.display === 'none';
@@ -267,12 +276,14 @@ export function showAddItemModal() {
   container.querySelector('#fm-unit2-factor').addEventListener('input', updateQty);
   container.querySelector('#fm-unit3-factor').addEventListener('input', updateQty);
 
-  // إضافة سريعة لتصنيف جديد
+  // إضافة سريعة لتصنيف جديد – إصلاح خطأ `row`
   container.querySelector('#btn-quick-cat').onclick = () => {
     const row = container.querySelector('#quick-cat-row');
     row.style.display = (row.style.display === 'none' ? 'block' : 'none');
   };
+
   container.querySelector('#btn-save-quick-cat').onclick = async () => {
+    const row = container.querySelector('#quick-cat-row'); // تعريف row هنا
     const input = container.querySelector('#fm-new-category');
     const select = container.querySelector('#fm-category_id');
     const name = input.value.trim();
