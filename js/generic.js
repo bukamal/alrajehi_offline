@@ -201,4 +201,3 @@ document.addEventListener('click', async e => {
     loadGenericSection(endpoints[type], type);
   }
 });
-

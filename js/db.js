@@ -5,6 +5,7 @@ export let suppliersCache = [];
 export let invoicesCache = [];
 export let categoriesCache = [];
 export let unitsCache = [];
+export let paymentsCache = [];  // ✅ NEW: Added missing payments cache
 
 export function initDB() {
   if (typeof Dexie === 'undefined' || !Dexie) {
@@ -37,7 +38,17 @@ export function getTable(name) {
 export async function apiCall(endpoint, method = 'GET', body = {}) {
   const [table, query] = endpoint.split('?');
   const params = new URLSearchParams(query || '');
-  const id = params.get('id') ? parseInt(params.get('id')) : null;
+  
+  // ✅ FIXED: Better id parsing - handle NaN and invalid values
+  let id = null;
+  const idParam = params.get('id');
+  if (idParam !== null && idParam !== '') {
+    const parsed = parseInt(idParam, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      id = parsed;
+    }
+  }
+  
   const type = params.get('type');
 
   if (method === 'GET') {
@@ -122,8 +133,8 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   } else if (method === 'DELETE') {
     const tbl = table.split('?')[0].replace('/', '');
     if (tbl === 'invoices') await getTable('invoiceLines').where({ invoice_id: id }).delete();
-    
-    // إصلاح: معالجة definitions بشكل صحيح
+
+    // ✅ FIXED: Better handling of definitions delete
     if (tbl === 'definitions') {
       const defType = type || params.get('type');
       if (defType === 'category') await getTable('categories').delete(id);
@@ -135,11 +146,21 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
     return { success: true };
   } else if (method === 'PUT') {
     let tbl = table.split('?')[0].replace('/', '');
+    
+    // ✅ FIXED: Better recordId resolution
     let recordId = id;
-    if (!recordId) recordId = body.id;
+    if (!recordId && body.id !== undefined && body.id !== null) {
+      const parsedBodyId = parseInt(body.id, 10);
+      if (!isNaN(parsedBodyId) && parsedBodyId > 0) {
+        recordId = parsedBodyId;
+      }
+    }
+    
     if (recordId === undefined || recordId === null) throw new Error('معرّف السجل مطلوب للتعديل');
+    
     const changes = { ...body };
     delete changes.id;
+    
     if (tbl === 'definitions') {
       const defType = type || changes.type;
       delete changes.type;
@@ -154,14 +175,15 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
 }
 
 export async function refreshCaches() {
-  [itemsCache, customersCache, suppliersCache, invoicesCache, categoriesCache, unitsCache] =
+  [itemsCache, customersCache, suppliersCache, invoicesCache, categoriesCache, unitsCache, paymentsCache] =
     await Promise.all([
       apiCall('/items', 'GET'),
       apiCall('/customers', 'GET'),
       apiCall('/suppliers', 'GET'),
       apiCall('/invoices', 'GET'),
       apiCall('/definitions?type=category', 'GET'),
-      apiCall('/definitions?type=unit', 'GET')
+      apiCall('/definitions?type=unit', 'GET'),
+      apiCall('/payments', 'GET')  // ✅ NEW: Refresh payments cache too
     ]);
 }
 
@@ -227,4 +249,3 @@ export async function performCascadeDelete(table, id) {
     await getTable(table).delete(id);
   });
 }
-

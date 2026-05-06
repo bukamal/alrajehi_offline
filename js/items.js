@@ -52,7 +52,8 @@ export function renderFilteredItems() {
   filtered.forEach(item => {
     const baseUnit = unitsCache.find(u => u.id == item.base_unit_id) || {};
     const unitName = baseUnit.name || 'قطعة';
-    html += `<tr onclick="window.showItemDetail(${item.id})" style="cursor:pointer;">
+    // ✅ FIXED: Use data attribute instead of onclick
+    html += `<tr data-item-id="${item.id}" class="item-row" style="cursor:pointer;">
       <td style="font-weight:700;">${item.name}</td>
       <td>${unitName}</td>
       <td>${item.quantity || 0}</td>
@@ -60,6 +61,14 @@ export function renderFilteredItems() {
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
+
+  // ✅ FIXED: Add event listeners properly instead of window global
+  container.querySelectorAll('.item-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const itemId = parseInt(row.dataset.itemId);
+      showItemDetail(itemId);
+    });
+  });
 }
 
 export async function getOrCreateUnit(name) {
@@ -72,7 +81,8 @@ export async function getOrCreateUnit(name) {
   return u.id;
 }
 
-window.showItemDetail = function (itemId) {
+// ✅ FIXED: Exported function instead of window global
+export function showItemDetail(itemId) {
   const item = itemsCache.find(i => i.id === itemId);
   if (!item) return;
 
@@ -136,7 +146,7 @@ window.showItemDetail = function (itemId) {
       loadItems();
     }, 200);
   };
-};
+}
 
 export function showAddItemModal() {
   const catOpts = categoriesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -447,4 +457,3 @@ export function checkStockAvailability(lines, type) {
   }
   return true;
 }
-

@@ -2,7 +2,8 @@ import { ICONS } from './constants.js';
 import { formatNumber, formatDate, showToast, openModal, confirmDialog } from './utils.js';
 import { db, apiCall, itemsCache, customersCache, suppliersCache, unitsCache, invoicesCache } from './db.js';
 import { checkStockAvailability } from './items.js';
-import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accouting.js';
+// ✅ FIXED: Renamed import from './accounting.js' (was './accouting.js')
+import { applyStockChanges, revertStockChanges, updateEntityBalance, netBalanceChange } from './accounting.js';
 
 /**
  * فتح نافذة إنشاء فاتورة (بيع أو شراء) مع دعم:
@@ -286,7 +287,7 @@ export function renderFilteredInvoices() {
   container.querySelectorAll('.print-inv-btn').forEach(b => {
     b.addEventListener('click', () => {
       const inv = invoicesCache.find(i => i.id == parseInt(b.dataset.id));
-      if (inv) window.printInvoice(inv, { preview: true, format: 'thermal' });
+      if (inv) printInvoice(inv, { preview: true, format: 'thermal' });
     });
   });
   container.querySelectorAll('.delete-inv-btn').forEach(b => {
@@ -320,7 +321,8 @@ export function showInvoiceDetail(inv) {
   modal.element.querySelector('#det-close').onclick = () => modal.close();
 }
 
-window.printInvoice = function (invoice, options = {}) {
+// ✅ FIXED: Exported function instead of window global
+export function printInvoice(invoice, options = {}) {
   const { preview = false } = options;
   const linesHTML = (invoice.invoice_lines || []).map(l => {
     const item = itemsCache.find(i => i.id == l.item_id);
@@ -343,12 +345,13 @@ window.printInvoice = function (invoice, options = {}) {
   w.document.write(thermalHTML);
   w.document.close();
   setTimeout(() => w.print(), 500);
-};
+}
 
 /**
  * حذف فاتورة مع عكس آثارها على المخزون وأرصدة العميل/المورد
+ * ✅ FIXED: Now exported
  */
-async function deleteInvoice(invId) {
+export async function deleteInvoice(invId) {
   const inv = invoicesCache.find(i => i.id === invId);
   if (!inv) return;
 
@@ -374,4 +377,3 @@ async function deleteInvoice(invId) {
   const idx = invoicesCache.findIndex(i => i.id === invId);
   if (idx !== -1) invoicesCache.splice(idx, 1);
 }
-

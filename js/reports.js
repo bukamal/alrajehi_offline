@@ -7,7 +7,9 @@ import {
   customersCache,
   suppliersCache,
   unitsCache,
-  invoicesCache
+  invoicesCache,
+  paymentsCache,  // ✅ FIXED: Now imported from db.js
+  categoriesCache
 } from './db.js';
 
 /**
@@ -373,6 +375,7 @@ async function doExport(stats) {
 
 /**
  * استيراد البيانات من ملف JSON
+ * ✅ FIXED: Now exported so it can be used by loadDashboard
  */
 export async function handleImport(file) {
   if (!file) return;
@@ -481,7 +484,9 @@ async function doImport(tableNames, data) {
   }
 }
 
-/** تحديث جميع الكاشات بعد الاستيراد */
+/** تحديث جميع الكاشات بعد الاستيراد
+ * ✅ FIXED: Now uses paymentsCache from db.js
+ */
 async function refreshAllCaches() {
   itemsCache.length = 0;
   customersCache.length = 0;
@@ -489,6 +494,7 @@ async function refreshAllCaches() {
   invoicesCache.length = 0;
   categoriesCache.length = 0;
   unitsCache.length = 0;
+  paymentsCache.length = 0;  // ✅ FIXED: Clear payments cache too
 
   const [items, customers, suppliers, invoices, categories, units, payments] = await Promise.all([
     apiCall('/items', 'GET'),
@@ -506,6 +512,7 @@ async function refreshAllCaches() {
   categoriesCache.push(...categories);
   unitsCache.push(...units);
   invoicesCache.push(...invoices);
+  paymentsCache.push(...payments);  // ✅ FIXED: Populate payments cache
 
   // إعادة حساب أرصدة الفواتير
   invoicesCache.forEach(inv => {
@@ -514,4 +521,3 @@ async function refreshAllCaches() {
     inv.balance = inv.total - inv.paid;
   });
 }
-

@@ -1,18 +1,23 @@
 {
-  "name": "alrajhi-accounting",
+  "name": "alrajehi-accounting",
   "version": "1.0.0",
   "description": "نظام محاسبة ذكي متكامل - يعمل بدون إنترنت",
   "main": "index.html",
   "scripts": {
-    "build": "echo 'No build step required for static PWA'",
-    "sync": "npx cap sync android",
-    "open": "npx cap open android"
+    "start": "npx serve .",
+    "build": "echo 'Static site - no build needed'",
+    "lint": "echo 'No linter configured'"
   },
-  "dependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/core": "^6.0.0"
-  },
+  "keywords": [
+    "accounting",
+    "pwa",
+    "offline",
+    "dexie",
+    "indexeddb"
+  ],
+  "author": "الراجحي للمحاسبة",
+  "license": "MIT",
   "devDependencies": {
-    "@capacitor/cli": "^6.0.0"
+    "serve": "^14.0.0"
   }
 }
