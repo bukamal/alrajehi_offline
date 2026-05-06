@@ -120,10 +120,11 @@ window.showItemDetail = function (itemId) {
   modal.element.querySelector('#delete-item-btn').onclick = async () => {
     modal.close();
     setTimeout(async () => {
+      // فحص العلاقات قبل الحذف
       const { counts } = await checkCascadeDelete('items', itemId);
       if (counts.invoiceLines > 0) {
         showToast(
-          `لا يمكن حذف المادة "${item.name}" لأنها مرتبطة بـ ${counts.invoiceLines} بند في الفواتير.`,
+          `لا يمكن حذف المادة "${item.name}" لأنها مرتبطة بـ ${counts.invoiceLines} بند في الفواتير. قم بحذف الفواتير أولاً.`,
           'error'
         );
         return;
@@ -446,3 +447,4 @@ export function checkStockAvailability(lines, type) {
   }
   return true;
 }
+
