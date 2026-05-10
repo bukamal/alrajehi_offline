@@ -52,14 +52,12 @@ export async function refreshCaches() {
   vouchersCache.length = 0; vouchersCache.push(...vchs);
   expensesCache.length = 0; expensesCache.push(...exps);
 
-  // تحديث الأرصدة في الفواتير
   invoicesCache.forEach(inv => {
     const paid = pmts.filter(p => p.invoice_id == inv.id).reduce((s, p) => s + (p.amount || 0), 0);
     inv.paid = paid;
     inv.balance = (inv.total || 0) - paid;
   });
 
-  // إثراء الفواتير بمعلومات العملاء والموردين
   invoicesCache.forEach(inv => {
     if (inv.customer_id) inv.customer = customersCache.find(c => c.id == inv.customer_id) || null;
     if (inv.supplier_id) inv.supplier = suppliersCache.find(s => s.id == inv.supplier_id) || null;
@@ -67,24 +65,18 @@ export async function refreshCaches() {
 }
 
 // ==================== API Call المحلي ====================
-// هذا هو الجسر بين واجهة online وبيانات offline
-// نفس توقيع apiCall من online لكنه يتعامل مع Dexie.js
-
 export async function apiCall(endpoint, method = 'GET', body = {}) {
   await ensureDataLoaded();
 
-  // إزالة initData من body إذا وجد
   if (body && body.initData) delete body.initData;
 
   const [path, queryString] = endpoint.split('?');
   const params = new URLSearchParams(queryString || '');
 
   switch (path) {
-    // ==================== الملخص (Dashboard) ====================
     case '/summary':
       return getSummary();
 
-    // ==================== المواد ====================
     case '/items':
       if (method === 'GET') return getItems();
       if (method === 'POST') return addItem(body);
@@ -92,7 +84,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       if (method === 'DELETE') return deleteItem(params.get('id'));
       break;
 
-    // ==================== العملاء ====================
     case '/customers':
       if (method === 'GET') return customersCache;
       if (method === 'POST') return addCustomer(body);
@@ -100,7 +91,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       if (method === 'DELETE') return deleteEntity('customers', params.get('id'));
       break;
 
-    // ==================== الموردين ====================
     case '/suppliers':
       if (method === 'GET') return suppliersCache;
       if (method === 'POST') return addSupplier(body);
@@ -108,11 +98,9 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       if (method === 'DELETE') return deleteEntity('suppliers', params.get('id'));
       break;
 
-    // ==================== التعريفات (تصنيفات/وحدات) ====================
     case '/definitions':
       return handleDefinitions(method, body, params);
 
-    // ==================== الفواتير ====================
     case '/invoices':
       if (method === 'GET') return invoicesCache;
       if (method === 'POST') return createInvoice(body);
@@ -120,7 +108,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       if (method === 'DELETE') return deleteInvoice(params.get('id'));
       break;
 
-    // ==================== الدفعات ====================
     case '/payments':
       if (params.get('voucher') === '1') return handleVouchers(method, body, params);
       if (method === 'GET') return paymentsCache;
@@ -128,18 +115,15 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
       if (method === 'DELETE') return deletePayment(params.get('id'));
       break;
 
-    // ==================== المصاريف ====================
     case '/expenses':
       if (method === 'GET') return expensesCache;
       if (method === 'POST') return addExpense(body);
       if (method === 'DELETE') return deleteExpense(params.get('id'));
       break;
 
-    // ==================== التقارير ====================
     case '/reports':
       return handleReports(params);
 
-    // ==================== الحسابات ====================
     case '/accounts':
       if (method === 'GET') return getAccounts();
       break;
@@ -152,7 +136,6 @@ export async function apiCall(endpoint, method = 'GET', body = {}) {
   return [];
 }
 
-// ==================== الدوال المساعدة ====================
 let dataLoaded = false;
 async function ensureDataLoaded() {
   if (!dataLoaded) {
@@ -161,7 +144,6 @@ async function ensureDataLoaded() {
   }
 }
 
-// --- المواد ---
 function getItems() {
   return itemsCache.map(item => ({
     ...item,
@@ -186,7 +168,6 @@ async function addItem(body) {
   if (!body.name) throw new Error('اسم المادة مطلوب');
   const existing = itemsCache.find(i => i.name.toLowerCase() === body.name.trim().toLowerCase());
   if (existing) throw new Error('توجد مادة بنفس الاسم');
-
   const item = {
     name: body.name.trim(),
     category_id: body.category_id || null,
@@ -198,11 +179,8 @@ async function addItem(body) {
     average_cost: parseFloat(body.purchase_price) || 0,
     item_units: body.item_units || []
   };
-
   const id = await db.items.add(item);
   item.id = id;
-
-  // إنشاء الوحدات الفرعية
   if (body.item_units && body.item_units.length > 0) {
     await db.item_units.bulkAdd(body.item_units.map(iu => ({
       item_id: id,
@@ -210,7 +188,6 @@ async function addItem(body) {
       conversion_factor: iu.conversion_factor
     })));
   }
-
   await refreshCaches();
   return itemsCache.find(i => i.id == id) || item;
 }
@@ -218,7 +195,6 @@ async function addItem(body) {
 async function updateItem(body) {
   if (!body.id) throw new Error('معرف المادة مطلوب');
   const id = Number(body.id);
-
   const updates = {};
   if (body.name) updates.name = body.name.trim();
   if (body.category_id !== undefined) updates.category_id = body.category_id || null;
@@ -228,10 +204,7 @@ async function updateItem(body) {
   if (body.quantity !== undefined) updates.quantity = parseFloat(body.quantity) || 0;
   if (body.base_unit_id !== undefined) updates.base_unit_id = body.base_unit_id || null;
   if (body.item_units !== undefined) updates.item_units = body.item_units;
-
   await db.items.update(id, updates);
-
-  // تحديث الوحدات الفرعية
   if (body.item_units !== undefined) {
     await db.item_units.where('item_id').equals(id).delete();
     if (body.item_units && body.item_units.length > 0) {
@@ -242,7 +215,6 @@ async function updateItem(body) {
       })));
     }
   }
-
   await refreshCaches();
   return itemsCache.find(i => i.id == id) || updates;
 }
@@ -250,28 +222,19 @@ async function updateItem(body) {
 async function deleteItem(id) {
   if (!id) throw new Error('معرف المادة مطلوب');
   id = Number(id);
-
   const usedLines = await db.invoiceLines.where('item_id').equals(id).count();
   if (usedLines > 0) throw new Error('لا يمكن حذف المادة لأنها مستخدمة في فواتير');
-
   await db.item_units.where('item_id').equals(id).delete();
   await db.items.delete(id);
   await refreshCaches();
   return { success: true };
 }
 
-// --- العملاء ---
 async function addCustomer(body) {
   if (!body.name) throw new Error('اسم العميل مطلوب');
   const existing = customersCache.find(c => c.name.toLowerCase() === body.name.trim().toLowerCase());
   if (existing) throw new Error('يوجد عميل بنفس الاسم');
-
-  const customer = {
-    name: body.name.trim(),
-    phone: body.phone || null,
-    address: body.address || null,
-    balance: 0
-  };
+  const customer = { name: body.name.trim(), phone: body.phone || null, address: body.address || null, balance: 0 };
   const id = await db.customers.add(customer);
   await refreshCaches();
   return customersCache.find(c => c.id == id) || customer;
@@ -289,18 +252,11 @@ async function updateCustomer(body) {
   return customersCache.find(c => c.id == id);
 }
 
-// --- الموردين ---
 async function addSupplier(body) {
   if (!body.name) throw new Error('اسم المورد مطلوب');
   const existing = suppliersCache.find(s => s.name.toLowerCase() === body.name.trim().toLowerCase());
   if (existing) throw new Error('يوجد مورد بنفس الاسم');
-
-  const supplier = {
-    name: body.name.trim(),
-    phone: body.phone || null,
-    address: body.address || null,
-    balance: 0
-  };
+  const supplier = { name: body.name.trim(), phone: body.phone || null, address: body.address || null, balance: 0 };
   const id = await db.suppliers.add(supplier);
   await refreshCaches();
   return suppliersCache.find(s => s.id == id) || supplier;
@@ -318,7 +274,6 @@ async function updateSupplier(body) {
   return suppliersCache.find(s => s.id == id);
 }
 
-// --- حذف عام ---
 async function deleteEntity(table, id) {
   if (!id) throw new Error('المعرف مطلوب');
   id = Number(id);
@@ -327,14 +282,11 @@ async function deleteEntity(table, id) {
   return { success: true };
 }
 
-// --- التعريفات ---
 async function handleDefinitions(method, body, params) {
   const type = params.get('type') || body?.type || 'category';
-
   if (method === 'GET') {
     return type === 'unit' ? unitsCache : categoriesCache;
   }
-
   if (method === 'POST') {
     const entry = {
       name: body.name.trim(),
@@ -342,18 +294,15 @@ async function handleDefinitions(method, body, params) {
       ...(type === 'unit' ? { abbreviation: body.abbreviation || null } : {})
     };
     if (!entry.name) throw new Error('الاسم مطلوب');
-
     const table = type === 'unit' ? db.units : db.categories;
     const cache = type === 'unit' ? unitsCache : categoriesCache;
     const existing = cache.find(x => x.name.toLowerCase() === entry.name.toLowerCase());
     if (existing) throw new Error(`${type === 'unit' ? 'وحدة' : 'تصنيف'} بنفس الاسم موجودة`);
-
     const id = await table.add(entry);
     entry.id = id;
     await refreshCaches();
     return entry;
   }
-
   if (method === 'PUT') {
     const id = Number(body.id);
     if (!id) throw new Error('المعرف مطلوب');
@@ -365,7 +314,6 @@ async function handleDefinitions(method, body, params) {
     await refreshCaches();
     return (type === 'unit' ? unitsCache : categoriesCache).find(x => x.id == id);
   }
-
   if (method === 'DELETE') {
     const id = Number(params.get('id'));
     if (!id) throw new Error('المعرف مطلوب');
@@ -374,20 +322,14 @@ async function handleDefinitions(method, body, params) {
     await refreshCaches();
     return { success: true };
   }
-
   return [];
 }
 
-// --- الفواتير ---
 async function createInvoice(body) {
   const { type, customer_id = null, supplier_id = null, date, reference, notes, lines, paid_amount = 0 } = body;
-
   if (!type || !['sale', 'purchase'].includes(type)) throw new Error('نوع الفاتورة غير صحيح');
   if (!lines || !Array.isArray(lines) || lines.length === 0) throw new Error('يجب إضافة بند واحد على الأقل');
-
   const total = lines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
-
-  // إنشاء الفاتورة
   const invId = await db.invoices.add({
     type,
     customer_id: customer_id ? Number(customer_id) : null,
@@ -399,8 +341,6 @@ async function createInvoice(body) {
     status: 'posted',
     created_at: new Date().toISOString()
   });
-
-  // إضافة البنود
   const lineRecords = lines.map(l => ({
     invoice_id: invId,
     item_id: l.item_id || null,
@@ -413,8 +353,6 @@ async function createInvoice(body) {
     conversion_factor: parseFloat(l.conversion_factor) || 1
   }));
   await db.invoiceLines.bulkAdd(lineRecords);
-
-  // تحديث المخزون
   for (const line of lines) {
     if (line.item_id) {
       const item = await db.items.get(Number(line.item_id));
@@ -422,8 +360,6 @@ async function createInvoice(body) {
         const qtyBase = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
         const delta = type === 'sale' ? -qtyBase : qtyBase;
         await db.items.update(item.id, { quantity: (item.quantity || 0) + delta });
-
-        // تحديث متوسط التكلفة للمشتريات
         if (type === 'purchase' && qtyBase > 0) {
           const oldQty = (item.quantity || 0);
           const oldCost = parseFloat(item.average_cost) || 0;
@@ -435,8 +371,6 @@ async function createInvoice(body) {
       }
     }
   }
-
-  // إضافة دفعة إذا وجدت
   const paid = parseFloat(paid_amount) || 0;
   if (paid > 0) {
     await db.payments.add({
@@ -447,8 +381,6 @@ async function createInvoice(body) {
       payment_date: date || new Date().toISOString().split('T')[0],
       notes: 'دفعة تلقائية من الفاتورة'
     });
-
-    // تحديث رصيد العميل/المورد
     if (type === 'sale' && customer_id) {
       const cust = await db.customers.get(Number(customer_id));
       if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) + total - paid });
@@ -457,7 +389,6 @@ async function createInvoice(body) {
       if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) + total - paid });
     }
   } else {
-    // بدون دفعة، كل المبلغ يضاف للرصيد
     if (type === 'sale' && customer_id) {
       const cust = await db.customers.get(Number(customer_id));
       if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) + total });
@@ -466,48 +397,34 @@ async function createInvoice(body) {
       if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) + total });
     }
   }
-
   await refreshCaches();
   return invoicesCache.find(i => i.id == invId) || { id: invId, ...body, total };
 }
 
 async function updateInvoice(body) {
-  // للتبسيط، سنقوم بحذف الفاتورة القديمة وإعادة إنشائها
   const id = Number(body.id);
   if (!id) throw new Error('معرف الفاتورة مطلوب');
-
-  // حذف البنود والدفعات القديمة
   await db.invoiceLines.where('invoice_id').equals(id).delete();
   await db.payments.where('invoice_id').equals(id).delete();
-
-  // حذف الفاتورة القديمة
   await db.invoices.delete(id);
-
-  // إنشاء فاتورة جديدة بنفس البيانات
   return createInvoice(body);
 }
 
 async function deleteInvoice(id) {
   if (!id) throw new Error('معرف الفاتورة مطلوب');
   id = Number(id);
-
   const invoice = await db.invoices.get(id);
   if (!invoice) throw new Error('الفاتورة غير موجودة');
-
-  // حذف البنود والدفعات
   await db.invoiceLines.where('invoice_id').equals(id).delete();
   await db.payments.where('invoice_id').equals(id).delete();
   await db.invoices.delete(id);
-
   await refreshCaches();
   return { success: true };
 }
 
-// --- الدفعات ---
 async function addPayment(body) {
   const { invoice_id, customer_id, supplier_id, amount, payment_date, notes } = body;
   if (!amount || parseFloat(amount) <= 0) throw new Error('المبلغ مطلوب');
-
   const pmtId = await db.payments.add({
     invoice_id: invoice_id ? Number(invoice_id) : null,
     customer_id: customer_id ? Number(customer_id) : null,
@@ -516,8 +433,6 @@ async function addPayment(body) {
     payment_date: payment_date || new Date().toISOString().split('T')[0],
     notes: notes || null
   });
-
-  // تحديث الأرصدة
   if (customer_id) {
     const cust = await db.customers.get(Number(customer_id));
     if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) - parseFloat(amount) });
@@ -526,7 +441,6 @@ async function addPayment(body) {
     const supp = await db.suppliers.get(Number(supplier_id));
     if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) - parseFloat(amount) });
   }
-
   await refreshCaches();
   return { id: pmtId, ...body };
 }
@@ -539,7 +453,6 @@ async function deletePayment(id) {
   return { success: true };
 }
 
-// --- السندات ---
 async function handleVouchers(method, body, params) {
   if (method === 'GET') {
     return vouchersCache.map(v => ({
@@ -548,17 +461,14 @@ async function handleVouchers(method, body, params) {
       supplier: v.supplier_id ? suppliersCache.find(s => s.id == v.supplier_id) : null
     }));
   }
-
   if (method === 'POST') {
     const { type, date, amount, description, reference, customer_id, supplier_id, invoice_id } = body;
     if (!type || !['receipt', 'payment', 'expense'].includes(type)) throw new Error('نوع السند غير صحيح');
     if (!amount || parseFloat(amount) <= 0) throw new Error('المبلغ مطلوب');
-
     const prefix = type === 'receipt' ? 'SC' : type === 'payment' ? 'SP' : 'SE';
     const existingVouchers = vouchersCache.filter(v => v.type === type);
     const nextNum = existingVouchers.length + 1;
     const finalReference = reference || `${prefix}-${String(nextNum).padStart(4, '0')}`;
-
     const id = await db.vouchers.add({
       type,
       date: date || new Date().toISOString().split('T')[0],
@@ -569,13 +479,10 @@ async function handleVouchers(method, body, params) {
       supplier_id: supplier_id ? Number(supplier_id) : null,
       invoice_id: invoice_id ? Number(invoice_id) : null
     });
-
-    // تحديث الأرصدة
     const amt = parseFloat(amount);
     if (type === 'receipt' && customer_id) {
       const cust = await db.customers.get(Number(customer_id));
       if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) - amt });
-      // إضافة للمدفوعات أيضاً
       await db.payments.add({
         invoice_id: invoice_id ? Number(invoice_id) : null,
         customer_id: Number(customer_id),
@@ -602,11 +509,9 @@ async function handleVouchers(method, body, params) {
         description: description || 'سند مصروف'
       });
     }
-
     await refreshCaches();
     return { id, type, amount: amt, reference: finalReference };
   }
-
   if (method === 'DELETE') {
     const id = Number(params.get('id'));
     if (!id) throw new Error('معرف السند مطلوب');
@@ -614,11 +519,9 @@ async function handleVouchers(method, body, params) {
     await refreshCaches();
     return { success: true };
   }
-
   return [];
 }
 
-// --- المصاريف ---
 async function addExpense(body) {
   const { amount, expense_date, description } = body;
   if (!amount || parseFloat(amount) <= 0) throw new Error('المبلغ مطلوب');
@@ -639,11 +542,9 @@ async function deleteExpense(id) {
   return { success: true };
 }
 
-// --- التقارير ---
 async function handleReports(params) {
   const type = params.get('type');
   await refreshCaches();
-
   switch (type) {
     case 'trial_balance': return getTrialBalance();
     case 'income_statement': return getIncomeStatement();
@@ -662,7 +563,6 @@ function getTrialBalance() {
   const cashBalance = totalSales - totalPurchases - totalExpenses;
   const receivables = customersCache.reduce((s, c) => s + (c.balance || 0), 0);
   const payables = suppliersCache.reduce((s, s2) => s + (s2.balance || 0), 0);
-
   return [
     { name: 'الصندوق', type: 'asset', total_debit: cashBalance > 0 ? cashBalance : 0, total_credit: cashBalance < 0 ? -cashBalance : 0, balance: cashBalance },
     { name: 'ذمم مدينة', type: 'asset', total_debit: receivables, total_credit: 0, balance: receivables },
@@ -708,19 +608,60 @@ function getBalanceSheet() {
 }
 
 function getAccountLedger() {
-  // تنفيذ مبسط - يمكن توسيعه لاحقاً
-  return [];
+  const lines = [];
+  invoicesCache.forEach(inv => {
+    const type = inv.type === 'sale' ? 'مبيعات' : 'مشتريات';
+    lines.push({
+      date: inv.date,
+      description: `فاتورة ${type} ${inv.reference || ''}`,
+      debit: inv.type === 'sale' ? 0 : (inv.total || 0),
+      credit: inv.type === 'sale' ? (inv.total || 0) : 0,
+      balance: 0
+    });
+  });
+  paymentsCache.forEach(p => {
+    lines.push({
+      date: p.payment_date,
+      description: p.notes || 'دفعة',
+      debit: p.supplier_id ? (p.amount || 0) : 0,
+      credit: p.customer_id ? (p.amount || 0) : 0,
+      balance: 0
+    });
+  });
+  expensesCache.forEach(ex => {
+    lines.push({
+      date: ex.expense_date,
+      description: ex.notes || 'مصروف',
+      debit: ex.amount || 0,
+      credit: 0,
+      balance: 0
+    });
+  });
+  vouchersCache.forEach(v => {
+    lines.push({
+      date: v.date,
+      description: `${v.type === 'receipt' ? 'سند قبض' : v.type === 'payment' ? 'سند دفع' : 'سند مصروف'} ${v.reference || ''}`,
+      debit: v.type === 'payment' ? (v.amount || 0) : 0,
+      credit: v.type === 'receipt' ? (v.amount || 0) : 0,
+      balance: 0
+    });
+  });
+  lines.sort((a, b) => a.date.localeCompare(b.date));
+  let balance = 0;
+  lines.forEach(line => {
+    balance = balance + line.debit - line.credit;
+    line.balance = balance;
+  });
+  return lines;
 }
 
 async function getEntityStatement(entityType, entityId) {
   if (!entityId) return [];
   const id = Number(entityId);
   const lines = [];
-
   const isCustomer = entityType === 'customer';
   const invs = invoicesCache.filter(i => isCustomer ? i.customer_id == id : i.supplier_id == id);
   const pmts = paymentsCache.filter(p => isCustomer ? p.customer_id == id : p.supplier_id == id);
-
   let balance = 0;
   invs.forEach(inv => {
     balance += inv.total || 0;
@@ -732,7 +673,6 @@ async function getEntityStatement(entityType, entityId) {
       balance
     });
   });
-
   pmts.forEach(p => {
     balance -= p.amount || 0;
     lines.push({
@@ -743,11 +683,9 @@ async function getEntityStatement(entityType, entityId) {
       balance
     });
   });
-
   return lines.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// --- الملخص ---
 function getSummary() {
   const totalSales = invoicesCache.filter(i => i.type === 'sale').reduce((s, i) => s + (i.total || 0), 0);
   const totalPurchases = invoicesCache.filter(i => i.type === 'purchase').reduce((s, i) => s + (i.total || 0), 0);
@@ -756,15 +694,12 @@ function getSummary() {
   const cashBalance = totalSales - totalPurchases - totalExpenses;
   const receivables = customersCache.reduce((s, c) => s + (c.balance || 0), 0);
   const payables = suppliersCache.reduce((s, s2) => s + (s2.balance || 0), 0);
-
-  // البيانات الشهرية
   const monthly = {};
   for (let i = 5; i >= 0; i--) {
     const d = new Date(); d.setMonth(d.getMonth() - i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     monthly[key] = { sales: 0, purchases: 0, expenses: 0 };
   }
-
   invoicesCache.forEach(inv => {
     if (!inv.date) return;
     const key = inv.date.substring(0, 7);
@@ -773,15 +708,12 @@ function getSummary() {
       else monthly[key].purchases += inv.total || 0;
     }
   });
-
   expensesCache.forEach(ex => {
     if (!ex.expense_date) return;
     const key = ex.expense_date.substring(0, 7);
     if (monthly[key]) monthly[key].expenses += ex.amount || 0;
   });
-
   const months = Object.keys(monthly).sort();
-
   return {
     net_profit: netProfit,
     cash_balance: cashBalance,
@@ -801,7 +733,6 @@ function getSummary() {
   };
 }
 
-// --- الحسابات ---
 function getAccounts() {
   return [
     { id: 1, name: 'الصندوق', type: 'asset' },

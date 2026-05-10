@@ -14,6 +14,7 @@ export const tabsConfig = {
   vouchers: { title: 'السندات', subtitle: 'سندات القبض والصرف والمصاريف', icon: ICONS.fileText },
   invoices: { title: 'الفواتير', subtitle: 'سجل الفواتير والحركات', icon: ICONS.fileText },
   reports: { title: 'التقارير', subtitle: 'التقارير المالية والإحصائيات', icon: ICONS.chart },
+  settings: { title: 'الإعدادات', subtitle: 'نسخ احتياطي واستيراد', icon: ICONS.settings },
   more: { title: 'المزيد', icon: ICONS.info }
 };
 
@@ -50,6 +51,7 @@ export function navigateTo(tabName) {
         case 'vouchers': { const m = await import('./vouchers.js'); m.loadVouchers(); break; }
         case 'invoices': { const m = await import('./invoices.js'); m.loadInvoices(); break; }
         case 'reports': { const m = await import('./reports.js'); m.loadReports(); break; }
+        case 'settings': { const m = await import('./settings.js'); m.loadSettings(); break; }
         case 'more': showMoreMenu(); break;
       }
     } catch (e) {
@@ -67,15 +69,15 @@ export function navigateTo(tabName) {
 
 function showMoreMenu() {
   document.getElementById('more-menu').style.display = 'flex';
-  unlockScroll(); // استخدام unlock بدلاً من lock ليكون متسقاً
+  unlockScroll();
 }
 
 export function initNavigation() {
   const sidebarNav = document.getElementById('sidebar-nav');
   const sheetGrid = document.getElementById('sheet-grid');
 
-  const mainTabs = ['dashboard', 'items', 'sale-invoice', 'purchase-invoice', 'customers', 'suppliers', 'categories', 'vouchers', 'invoices', 'reports'];
-  const moreTabs = ['purchase-invoice', 'customers', 'suppliers', 'categories', 'vouchers', 'reports'];
+  const mainTabs = ['dashboard', 'items', 'sale-invoice', 'purchase-invoice', 'customers', 'suppliers', 'categories', 'vouchers', 'invoices', 'reports', 'settings'];
+  const moreTabs = ['purchase-invoice', 'customers', 'suppliers', 'categories', 'vouchers', 'reports', 'settings'];
 
   mainTabs.forEach(key => {
     const cfg = tabsConfig[key];
@@ -100,7 +102,6 @@ export function initNavigation() {
   });
 }
 
-// ربط أحداث الواجهة
 document.getElementById('menu-toggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('open');
 });
@@ -121,7 +122,6 @@ document.querySelectorAll('.bottom-item').forEach(btn => {
   });
 });
 
-// زر المساعدة
 document.getElementById('btn-help').addEventListener('click', () => {
   import('./modal.js').then(m => m.openModal({
     title: 'مركز المساعدة',
@@ -134,6 +134,7 @@ document.getElementById('btn-help').addEventListener('click', () => {
           <li>تسجيل الدفعات والسندات والمصاريف</li>
           <li>عرض التقارير المالية المتكاملة</li>
           <li>طباعة الفواتير بتنسيقات متعددة</li>
+          <li>تصدير واستيراد نسخة احتياطية</li>
         </ul>
         <div style="background:var(--bg); border-radius:16px; padding:20px; border:1px solid var(--border);">
           <div style="font-weight:800; margin-bottom:8px; font-size:15px;">💡 وضع Offline</div>

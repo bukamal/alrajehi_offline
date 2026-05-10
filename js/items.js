@@ -1,5 +1,5 @@
 // js/items.js — إدارة المواد (Offline)
-import { apiCall, formatNumber, formatDate, debounce, ICONS, getUnitOptionsForItem, renderSkeleton, animateEntry } from './core.js';
+import { apiCall, formatNumber, formatDate, debounce, ICONS, getUnitOptionsForItem, renderSkeleton, animateEntry, emptyState } from './core.js';
 import { get as storeGet, set as storeSet } from './store.js';
 import { showToast, openModal, confirmDialog } from './modal.js';
 
@@ -54,13 +54,7 @@ export function renderFilteredItems() {
   }
 
   if (!filtered.length) {
-    container.innerHTML = `<div class="empty-state">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-      </svg>
-      <h3>لا توجد مواد مطابقة</h3>
-      <p>يمكنك إضافة مواد جديدة من الزر أعلاه</p>
-    </div>`;
+    container.innerHTML = emptyState('لا توجد مواد مطابقة', 'يمكنك إضافة مواد جديدة من الزر أعلاه');
     return;
   }
 
@@ -84,7 +78,6 @@ export function renderFilteredItems() {
     const stockColor = available <= 0 ? 'var(--danger)' : available < LOW_STOCK_THRESHOLD ? 'var(--warning)' : 'var(--success)';
     const sellingPrice = item.selling_price || 0;
     const totalValue = item.total_value ?? (available * (parseFloat(item.average_cost) || 0));
-
     const subUnitsText = computeSubUnitQuantities(available, baseUnitName, item.item_units || []);
 
     html += `
@@ -162,7 +155,7 @@ export async function loadItems() {
     await apiCall('/items', 'GET');
     renderFilteredItems();
   } catch (err) {
-    document.getElementById('items-list').innerHTML = `<div class="empty-state"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><h3>عذراً، حدث خطأ</h3><p>${err.message}</p></div>`;
+    document.getElementById('items-list').innerHTML = emptyState('عذراً، حدث خطأ', err.message);
     showToast(err.message, 'error');
   }
 }
@@ -362,16 +355,6 @@ async function showAddItemModal() {
     bodyHTML: body,
     footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>`
   });
-
-  // ... (Event listeners for unit toggle, quantity update, quick category, save)
-  // To keep this code block concise, the rest of the function is identical to the one in the full project.
-  // It handles getOrCreateUnit(), preparation of item_units array, apiCall POST, etc.
-  // (See previous full implementation for complete details)
-  // I will now include a placeholder that indicates the complete code follows.
-  // Actually I need to output the complete function. Since it's very long, I'll include all the event handlers.
-  // For brevity, I'll add a comment that the rest of the code is the same as before.
-  // BUT the user strictly asked for the FULL file. I must output the entire content without cutting.
-  // So I'll continue with the full implementation.
 
   const baseNameInput = modal.element.querySelector('#fm-base_unit_name');
   const extraUnitsDiv = modal.element.querySelector('#extra-units');
@@ -591,7 +574,6 @@ async function showEditItemModal(itemId) {
     footerHTML: `<button class="btn btn-secondary" id="fm-cancel">إلغاء</button><button class="btn btn-primary" id="fm-save">${ICONS.check} حفظ</button>`
   });
 
-  // Same event handlers as add modal
   const baseNameInput = modal.element.querySelector('#fm-base_unit_name');
   const extraUnitsDiv = modal.element.querySelector('#extra-units');
   const toggleBtn = modal.element.querySelector('#btn-toggle-units');

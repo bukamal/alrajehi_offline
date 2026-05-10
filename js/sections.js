@@ -1,5 +1,5 @@
 // js/sections.js — العملاء والموردين والتصنيفات والوحدات (Offline)
-import { apiCall, formatNumber, ICONS, animateEntry } from './core.js';
+import { apiCall, formatNumber, ICONS, animateEntry, emptyState } from './core.js';
 import { get as storeGet, set as storeSet } from './store.js';
 import { showToast, openModal, confirmDialog, showFormModal } from './modal.js';
 import { currentTab } from './navigation.js';
@@ -266,16 +266,6 @@ export async function deleteUnit(unitId) {
     showToast('تم الحذف بنجاح', 'success');
     loadUnitsSection();
   } catch (e) { showToast(e.message, 'error'); }
-}
-
-function emptyState(title, subtitle) {
-  return `<div class="empty-state">
-    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-    </svg>
-    <h3>${title}</h3>
-    <p>${subtitle}</p>
-  </div>`;
 }
 
 // ==================== معالج النقر العام (إضافة/تعديل/حذف) ====================

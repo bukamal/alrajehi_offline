@@ -1,5 +1,5 @@
 // js/vouchers.js — السندات (Offline)
-import { apiCall, formatNumber, formatDate, ICONS, animateEntry } from './core.js';
+import { apiCall, formatNumber, formatDate, ICONS, animateEntry, emptyState } from './core.js';
 import { showToast, confirmDialog, openModal } from './modal.js';
 import { invalidate, subscribe, get as storeGet } from './store.js';
 import { currentTab } from './navigation.js';
@@ -448,14 +448,4 @@ ${v.invoice_id ? `<div class="row"><span class="label">الفاتورة:</span><
   } else {
     showToast('⚠️ تعذر فتح نافذة الطباعة. جرب السماح بالنوافذ المنبثقة.', 'warning');
   }
-}
-
-function emptyState(title, subtitle) {
-  return `<div class="empty-state">
-    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-    </svg>
-    <h3>${title}</h3>
-    <p>${subtitle}</p>
-  </div>`;
 }

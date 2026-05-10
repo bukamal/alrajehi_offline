@@ -1,4 +1,4 @@
-// public/js/dashboard.js
+// js/dashboard.js
 import { apiCall, formatNumber, renderSkeleton, animateEntry } from './core.js';
 import { showToast } from './modal.js';
 
