@@ -1,85 +1,63 @@
-// js/init.js — تهيئة التطبيق المحلي مع دعم المشاركة والنسخ الاحتياطي
+// js/init.js — تهيئة التطبيق مع فحص الترخيص السنوي
+import { checkActivation, activateLicense } from './activation.js';
 import { initNavigation } from './navigation.js';
 import { loadDashboard } from './dashboard.js';
-import { refreshCaches, apiCall } from './db.js';
+import { refreshCaches } from './db.js';
 import { showToast } from './modal.js';
 
 async function initApp() {
-  try {
-    await refreshCaches();
-    document.getElementById('user-name-sidebar').textContent = 'مستخدم';
-    document.getElementById('user-avatar').textContent = 'م';
-    initNavigation();
-    document.getElementById('loading-screen').classList.add('hidden');
-    await loadDashboard();
+    const status = checkActivation();
 
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('share-import') === 'pending') {
-      await handleSharedFileImport();
-      window.history.replaceState({}, document.title, window.location.pathname);
+    if (!status.valid) {
+        // إخفاء شاشة التحميل وإظهار واجهة التفعيل
+        document.getElementById('loading-screen').style.display = 'none';
+        const activationScreen = document.getElementById('activation-screen');
+        if (activationScreen) {
+            activationScreen.style.display = 'flex';
+            // إعداد رسالة حسب السبب
+            const msgEl = document.getElementById('activation-msg');
+            if (msgEl) {
+                switch (status.reason) {
+                    case 'expired': msgEl.textContent = 'انتهت صلاحية الترخيص. يرجى التواصل مع المورد للحصول على مفتاح جديد.'; break;
+                    case 'clock_tampered': msgEl.textContent = 'تم اكتشاف تلاعب في تاريخ الجهاز. تم إلغاء الترخيص.'; break;
+                    case 'device_mismatch': msgEl.textContent = 'هذا الترخيص غير صالح لهذا الجهاز.'; break;
+                    default: msgEl.textContent = 'الترخيص غير موجود أو تالف. يرجى إدخال مفتاح الترخيص.';
+                }
+            }
+            document.getElementById('btn-activate').addEventListener('click', async () => {
+                const key = document.getElementById('license-input').value.trim();
+                const msg = document.getElementById('activation-msg');
+                try {
+                    await activateLicense(key);
+                    msg.textContent = 'تم التفعيل بنجاح! جاري تحميل التطبيق...';
+                    msg.style.color = 'var(--success)';
+                    setTimeout(() => location.reload(), 1000);
+                } catch (e) {
+                    msg.textContent = e.message;
+                    msg.style.color = 'var(--danger)';
+                }
+            });
+        }
+        return;
     }
 
-    import('./db.js').then(({ apiCall }) => {
-      Promise.all([
-        apiCall('/items', 'GET'),
-        apiCall('/customers', 'GET'),
-        apiCall('/suppliers', 'GET'),
-        apiCall('/invoices', 'GET'),
-        apiCall('/definitions?type=category', 'GET'),
-        apiCall('/definitions?type=unit', 'GET')
-      ]).catch(err => console.warn('تعذّر جلب بعض البيانات الأولية:', err));
-    });
-
-  } catch (e) {
-    console.error('[App Init Error]', e);
-    showToast(e.message, 'error');
-    document.getElementById('loading-screen').classList.add('hidden');
-    const errScreen = document.getElementById('error-screen');
-    const errDetails = document.getElementById('error-details');
-    if (errScreen && errDetails) {
-      errScreen.style.display = 'flex';
-      errDetails.textContent = e.stack || e.message || 'خطأ غير معروف';
+    // التطبيق مفعل، تابع التهيئة بشكل طبيعي
+    if (document.getElementById('activation-screen')) {
+        document.getElementById('activation-screen').style.display = 'none';
     }
-  }
-}
 
-async function handleSharedFileImport() {
-  try {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('AlrajhiSharedFiles', 1);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    const tx = db.transaction('files', 'readonly');
-    const store = tx.objectStore('files');
-    const stored = await new Promise((resolve, reject) => {
-      const getReq = store.get('pending_import');
-      getReq.onsuccess = () => resolve(getReq.result);
-      getReq.onerror = () => reject(getReq.error);
-    });
-    if (stored && stored.files) {
-      for (const file of stored.files) {
-        const json = new TextDecoder().decode(new Uint8Array(file.data));
-        const data = JSON.parse(json);
-        await importDataFromJSON(data);
-      }
-      showToast('تم استيراد الملفات بنجاح', 'success');
+    try {
+        await refreshCaches();
+        document.getElementById('user-name-sidebar').textContent = 'مستخدم';
+        document.getElementById('user-avatar').textContent = 'م';
+        initNavigation();
+        document.getElementById('loading-screen').classList.add('hidden');
+        await loadDashboard();
+    } catch (e) {
+        console.error(e);
+        showToast('فشل تهيئة التطبيق', 'error');
+        document.getElementById('loading-screen').classList.add('hidden');
     }
-    const deleteTx = db.transaction('files', 'readwrite');
-    deleteTx.objectStore('files').delete('pending_import');
-  } catch (err) {
-    showToast('فشل استيراد الملفات: ' + err.message, 'error');
-  }
-}
-
-async function importDataFromJSON(data) {
-  const tables = ['items', 'units', 'categories', 'customers', 'suppliers', 'invoices', 'invoiceLines', 'payments', 'expenses', 'vouchers'];
-  for (const table of tables) {
-    if (data[table] && Array.isArray(data[table])) {
-      await db.table(table).bulkPut(data[table]);
-    }
-  }
-  await refreshCaches();
 }
 
 initApp();
