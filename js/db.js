@@ -1,11 +1,9 @@
 // js/db.js — قاعدة بيانات IndexedDB مع Dexie.js + apiCall المحلي
-// نستخدم المتغير العام window.Dexie بدلاً من import
 const Dexie = window.Dexie;
 
-// ==================== إنشاء قاعدة البيانات ====================
 export const db = new Dexie('AlrajhiAccounting');
 
-db.version(15).stores({
+db.version(16).stores({
   items: '++id, name, category_id, base_unit_id',
   units: '++id, name, abbreviation',
   categories: '++id, name',
@@ -13,6 +11,7 @@ db.version(15).stores({
   suppliers: '++id, name, phone, balance',
   invoices: '++id, type, reference, date, customer_id, supplier_id, total',
   invoiceLines: '++id, invoice_id, item_id',
+  item_units: '++id, item_id, unit_id, conversion_factor', // <-- أُضيف هنا
   payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date',
   expenses: '++id, date, amount, notes',
   vouchers: '++id, type, date, amount, description, reference, customer_id, supplier_id, invoice_id'
