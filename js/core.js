@@ -227,3 +227,14 @@ export function emptyState(title, subtitle = '') {
     <p>${subtitle}</p>
   </div>`;
 }
+
+// ==================== دالة تطهير HTML بسيطة ====================
+export function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

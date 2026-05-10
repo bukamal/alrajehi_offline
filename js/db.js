@@ -11,7 +11,7 @@ db.version(16).stores({
   suppliers: '++id, name, phone, balance',
   invoices: '++id, type, reference, date, customer_id, supplier_id, total',
   invoiceLines: '++id, invoice_id, item_id',
-  item_units: '++id, item_id, unit_id, conversion_factor', // <-- أُضيف هنا
+  item_units: '++id, item_id, unit_id, conversion_factor',
   payments: '++id, invoice_id, customer_id, supplier_id, amount, payment_date',
   expenses: '++id, date, amount, notes',
   vouchers: '++id, type, date, amount, description, reference, customer_id, supplier_id, invoice_id'
@@ -62,6 +62,14 @@ export async function refreshCaches() {
     if (inv.customer_id) inv.customer = customersCache.find(c => c.id == inv.customer_id) || null;
     if (inv.supplier_id) inv.supplier = suppliersCache.find(s => s.id == inv.supplier_id) || null;
   });
+}
+
+// ==================== دوال التحقق ====================
+function validateCashPayment(invoiceType, entityId, paidAmount, totalAmount) {
+  const isCash = (invoiceType === 'sale' && !entityId) || (invoiceType === 'purchase' && !entityId);
+  if (isCash && Math.abs(paidAmount - totalAmount) > 0.01) {
+    throw new Error('الفاتورة النقدية تتطلب دفع كامل المبلغ فوراً');
+  }
 }
 
 // ==================== API Call المحلي ====================
@@ -166,7 +174,8 @@ function getItems() {
 
 async function addItem(body) {
   if (!body.name) throw new Error('اسم المادة مطلوب');
-  const existing = itemsCache.find(i => i.name.toLowerCase() === body.name.trim().toLowerCase());
+  const nameLower = body.name.trim().toLowerCase();
+  const existing = itemsCache.find(i => i.name.toLowerCase() === nameLower);
   if (existing) throw new Error('توجد مادة بنفس الاسم');
   const item = {
     name: body.name.trim(),
@@ -195,6 +204,11 @@ async function addItem(body) {
 async function updateItem(body) {
   if (!body.id) throw new Error('معرف المادة مطلوب');
   const id = Number(body.id);
+  if (body.name) {
+    const nameLower = body.name.trim().toLowerCase();
+    const existing = itemsCache.find(i => i.id !== id && i.name.toLowerCase() === nameLower);
+    if (existing) throw new Error('توجد مادة أخرى بنفس الاسم');
+  }
   const updates = {};
   if (body.name) updates.name = body.name.trim();
   if (body.category_id !== undefined) updates.category_id = body.category_id || null;
@@ -232,7 +246,8 @@ async function deleteItem(id) {
 
 async function addCustomer(body) {
   if (!body.name) throw new Error('اسم العميل مطلوب');
-  const existing = customersCache.find(c => c.name.toLowerCase() === body.name.trim().toLowerCase());
+  const nameLower = body.name.trim().toLowerCase();
+  const existing = customersCache.find(c => c.name.toLowerCase() === nameLower);
   if (existing) throw new Error('يوجد عميل بنفس الاسم');
   const customer = { name: body.name.trim(), phone: body.phone || null, address: body.address || null, balance: 0 };
   const id = await db.customers.add(customer);
@@ -243,6 +258,11 @@ async function addCustomer(body) {
 async function updateCustomer(body) {
   if (!body.id) throw new Error('معرف العميل مطلوب');
   const id = Number(body.id);
+  if (body.name) {
+    const nameLower = body.name.trim().toLowerCase();
+    const existing = customersCache.find(c => c.id !== id && c.name.toLowerCase() === nameLower);
+    if (existing) throw new Error('يوجد عميل آخر بنفس الاسم');
+  }
   const updates = {};
   if (body.name) updates.name = body.name.trim();
   if (body.phone !== undefined) updates.phone = body.phone || null;
@@ -254,7 +274,8 @@ async function updateCustomer(body) {
 
 async function addSupplier(body) {
   if (!body.name) throw new Error('اسم المورد مطلوب');
-  const existing = suppliersCache.find(s => s.name.toLowerCase() === body.name.trim().toLowerCase());
+  const nameLower = body.name.trim().toLowerCase();
+  const existing = suppliersCache.find(s => s.name.toLowerCase() === nameLower);
   if (existing) throw new Error('يوجد مورد بنفس الاسم');
   const supplier = { name: body.name.trim(), phone: body.phone || null, address: body.address || null, balance: 0 };
   const id = await db.suppliers.add(supplier);
@@ -265,6 +286,11 @@ async function addSupplier(body) {
 async function updateSupplier(body) {
   if (!body.id) throw new Error('معرف المورد مطلوب');
   const id = Number(body.id);
+  if (body.name) {
+    const nameLower = body.name.trim().toLowerCase();
+    const existing = suppliersCache.find(s => s.id !== id && s.name.toLowerCase() === nameLower);
+    if (existing) throw new Error('يوجد مورد آخر بنفس الاسم');
+  }
   const updates = {};
   if (body.name) updates.name = body.name.trim();
   if (body.phone !== undefined) updates.phone = body.phone || null;
@@ -277,6 +303,17 @@ async function updateSupplier(body) {
 async function deleteEntity(table, id) {
   if (!id) throw new Error('المعرف مطلوب');
   id = Number(id);
+  if (table === 'customers') {
+    const invCount = await db.invoices.where('customer_id').equals(id).count();
+    if (invCount > 0) throw new Error('لا يمكن حذف العميل لارتباطه بفواتير');
+    const payCount = await db.payments.where('customer_id').equals(id).count();
+    if (payCount > 0) throw new Error('لا يمكن حذف العميل لارتباطه بدفعات');
+  } else if (table === 'suppliers') {
+    const invCount = await db.invoices.where('supplier_id').equals(id).count();
+    if (invCount > 0) throw new Error('لا يمكن حذف المورد لارتباطه بفواتير');
+    const payCount = await db.payments.where('supplier_id').equals(id).count();
+    if (payCount > 0) throw new Error('لا يمكن حذف المورد لارتباطه بدفعات');
+  }
   await db[table].delete(id);
   await refreshCaches();
   return { success: true };
@@ -306,17 +343,32 @@ async function handleDefinitions(method, body, params) {
   if (method === 'PUT') {
     const id = Number(body.id);
     if (!id) throw new Error('المعرف مطلوب');
+    const cache = type === 'unit' ? unitsCache : categoriesCache;
+    if (body.name) {
+      const nameLower = body.name.trim().toLowerCase();
+      const existing = cache.find(x => x.id !== id && x.name.toLowerCase() === nameLower);
+      if (existing) throw new Error(`${type === 'unit' ? 'وحدة' : 'تصنيف'} آخر بنفس الاسم موجود`);
+    }
     const table = type === 'unit' ? db.units : db.categories;
     const updates = {};
     if (body.name) updates.name = body.name.trim();
     if (type === 'unit' && body.abbreviation !== undefined) updates.abbreviation = body.abbreviation || null;
     await table.update(id, updates);
     await refreshCaches();
-    return (type === 'unit' ? unitsCache : categoriesCache).find(x => x.id == id);
+    return cache.find(x => x.id == id);
   }
   if (method === 'DELETE') {
     const id = Number(params.get('id'));
     if (!id) throw new Error('المعرف مطلوب');
+    if (type === 'category') {
+      const count = await db.items.where('category_id').equals(id).count();
+      if (count > 0) throw new Error('لا يمكن حذف التصنيف لاستخدامه في مواد');
+    } else if (type === 'unit') {
+      const baseUsed = await db.items.where('base_unit_id').equals(id).count();
+      if (baseUsed > 0) throw new Error('لا يمكن حذف الوحدة لأنها وحدة أساسية لمواد');
+      const subUsed = await db.item_units.where('unit_id').equals(id).count();
+      if (subUsed > 0) throw new Error('لا يمكن حذف الوحدة لاستخدامها في وحدات فرعية');
+    }
     const table = type === 'unit' ? db.units : db.categories;
     await table.delete(id);
     await refreshCaches();
@@ -329,58 +381,68 @@ async function createInvoice(body) {
   const { type, customer_id = null, supplier_id = null, date, reference, notes, lines, paid_amount = 0 } = body;
   if (!type || !['sale', 'purchase'].includes(type)) throw new Error('نوع الفاتورة غير صحيح');
   if (!lines || !Array.isArray(lines) || lines.length === 0) throw new Error('يجب إضافة بند واحد على الأقل');
+
   const total = lines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
-  const invId = await db.invoices.add({
-    type,
-    customer_id: customer_id ? Number(customer_id) : null,
-    supplier_id: supplier_id ? Number(supplier_id) : null,
-    date: date || new Date().toISOString().split('T')[0],
-    reference: reference || null,
-    notes: notes || null,
-    total,
-    status: 'posted',
-    created_at: new Date().toISOString()
-  });
-  const lineRecords = lines.map(l => ({
-    invoice_id: invId,
-    item_id: l.item_id || null,
-    description: l.description || null,
-    quantity: parseFloat(l.quantity) || 0,
-    unit_price: parseFloat(l.unit_price) || 0,
-    total: parseFloat(l.total) || 0,
-    unit_id: l.unit_id || null,
-    quantity_in_base: (parseFloat(l.quantity) || 0) * (parseFloat(l.conversion_factor) || 1),
-    conversion_factor: parseFloat(l.conversion_factor) || 1
-  }));
-  await db.invoiceLines.bulkAdd(lineRecords);
-  for (const line of lines) {
-    if (line.item_id) {
-      const item = await db.items.get(Number(line.item_id));
-      if (item) {
-        const qtyBase = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
-        const delta = type === 'sale' ? -qtyBase : qtyBase;
-        await db.items.update(item.id, { quantity: (item.quantity || 0) + delta });
-        if (type === 'purchase' && qtyBase > 0) {
-          const oldQty = (item.quantity || 0);
-          const oldCost = parseFloat(item.average_cost) || 0;
-          const newCost = parseFloat(line.unit_price) || 0;
-          const newQty = oldQty + qtyBase;
-          const avgCost = newQty > 0 ? ((oldQty * oldCost) + (qtyBase * newCost)) / newQty : newCost;
-          await db.items.update(item.id, { average_cost: avgCost });
+  const entityId = type === 'sale' ? customer_id : supplier_id;
+  validateCashPayment(type, entityId, parseFloat(paid_amount) || 0, total);
+
+  return db.transaction('rw', db.invoices, db.invoiceLines, db.items, db.payments, db.customers, db.suppliers, async () => {
+    const invId = await db.invoices.add({
+      type,
+      customer_id: customer_id ? Number(customer_id) : null,
+      supplier_id: supplier_id ? Number(supplier_id) : null,
+      date: date || new Date().toISOString().split('T')[0],
+      reference: reference || null,
+      notes: notes || null,
+      total,
+      status: 'posted',
+      created_at: new Date().toISOString()
+    });
+
+    const lineRecords = lines.map(l => ({
+      invoice_id: invId,
+      item_id: l.item_id || null,
+      description: l.description || null,
+      quantity: parseFloat(l.quantity) || 0,
+      unit_price: parseFloat(l.unit_price) || 0,
+      total: parseFloat(l.total) || 0,
+      unit_id: l.unit_id || null,
+      quantity_in_base: (parseFloat(l.quantity) || 0) * (parseFloat(l.conversion_factor) || 1),
+      conversion_factor: parseFloat(l.conversion_factor) || 1
+    }));
+    await db.invoiceLines.bulkAdd(lineRecords);
+
+    for (const line of lines) {
+      if (line.item_id) {
+        const item = await db.items.get(Number(line.item_id));
+        if (item) {
+          const qtyBase = (parseFloat(line.quantity) || 0) * (parseFloat(line.conversion_factor) || 1);
+          const delta = type === 'sale' ? -qtyBase : qtyBase;
+          await db.items.update(item.id, { quantity: (item.quantity || 0) + delta });
+          if (type === 'purchase' && qtyBase > 0) {
+            const oldQty = (item.quantity || 0);
+            const oldCost = parseFloat(item.average_cost) || 0;
+            const newCost = parseFloat(line.unit_price) || 0;
+            const newQty = oldQty + qtyBase;
+            const avgCost = newQty > 0 ? ((oldQty * oldCost) + (qtyBase * newCost)) / newQty : newCost;
+            await db.items.update(item.id, { average_cost: avgCost });
+          }
         }
       }
     }
-  }
-  const paid = parseFloat(paid_amount) || 0;
-  if (paid > 0) {
-    await db.payments.add({
-      invoice_id: invId,
-      customer_id: customer_id ? Number(customer_id) : null,
-      supplier_id: supplier_id ? Number(supplier_id) : null,
-      amount: paid,
-      payment_date: date || new Date().toISOString().split('T')[0],
-      notes: 'دفعة تلقائية من الفاتورة'
-    });
+
+    const paid = parseFloat(paid_amount) || 0;
+    if (paid > 0) {
+      await db.payments.add({
+        invoice_id: invId,
+        customer_id: customer_id ? Number(customer_id) : null,
+        supplier_id: supplier_id ? Number(supplier_id) : null,
+        amount: paid,
+        payment_date: date || new Date().toISOString().split('T')[0],
+        notes: 'دفعة تلقائية من الفاتورة'
+      });
+    }
+
     if (type === 'sale' && customer_id) {
       const cust = await db.customers.get(Number(customer_id));
       if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) + total - paid });
@@ -388,26 +450,59 @@ async function createInvoice(body) {
       const supp = await db.suppliers.get(Number(supplier_id));
       if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) + total - paid });
     }
-  } else {
-    if (type === 'sale' && customer_id) {
-      const cust = await db.customers.get(Number(customer_id));
-      if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) + total });
-    } else if (type === 'purchase' && supplier_id) {
-      const supp = await db.suppliers.get(Number(supplier_id));
-      if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) + total });
-    }
-  }
-  await refreshCaches();
-  return invoicesCache.find(i => i.id == invId) || { id: invId, ...body, total };
+
+    return invId;
+  }).then(async (invId) => {
+    await refreshCaches();
+    return invoicesCache.find(i => i.id === invId) || { id: invId, ...body, total };
+  });
 }
 
 async function updateInvoice(body) {
   const id = Number(body.id);
   if (!id) throw new Error('معرف الفاتورة مطلوب');
-  await db.invoiceLines.where('invoice_id').equals(id).delete();
-  await db.payments.where('invoice_id').equals(id).delete();
-  await db.invoices.delete(id);
-  return createInvoice(body);
+
+  const oldInvoice = await db.invoices.get(id);
+  if (!oldInvoice) throw new Error('الفاتورة غير موجودة');
+
+  return db.transaction('rw', db.invoices, db.invoiceLines, db.items, db.payments, db.customers, db.suppliers, async () => {
+    const oldLines = await db.invoiceLines.where('invoice_id').equals(id).toArray();
+    for (const line of oldLines) {
+      if (line.item_id) {
+        const item = await db.items.get(Number(line.item_id));
+        if (item) {
+          const qtyBase = line.quantity_in_base || line.quantity;
+          const delta = oldInvoice.type === 'sale' ? qtyBase : -qtyBase;
+          await db.items.update(item.id, { quantity: (item.quantity || 0) + delta });
+        }
+      }
+    }
+    if (oldInvoice.type === 'sale' && oldInvoice.customer_id) {
+      const cust = await db.customers.get(Number(oldInvoice.customer_id));
+      if (cust) {
+        const oldPaid = (await db.payments.where('invoice_id').equals(id).toArray()).reduce((s,p)=>s+p.amount,0);
+        await db.customers.update(cust.id, { balance: (cust.balance || 0) - (oldInvoice.total - oldPaid) });
+      }
+    } else if (oldInvoice.type === 'purchase' && oldInvoice.supplier_id) {
+      const supp = await db.suppliers.get(Number(oldInvoice.supplier_id));
+      if (supp) {
+        const oldPaid = (await db.payments.where('invoice_id').equals(id).toArray()).reduce((s,p)=>s+p.amount,0);
+        await db.suppliers.update(supp.id, { balance: (supp.balance || 0) - (oldInvoice.total - oldPaid) });
+      }
+    }
+
+    await db.invoiceLines.where('invoice_id').equals(id).delete();
+    await db.payments.where('invoice_id').equals(id).delete();
+    await db.invoices.delete(id);
+
+    const newBody = { ...body };
+    delete newBody.id;
+    const newId = await createInvoice(newBody);
+    return newId;
+  }).then(async () => {
+    await refreshCaches();
+    return invoicesCache.find(i => i.id == id) || body;
+  });
 }
 
 async function deleteInvoice(id) {
@@ -415,11 +510,47 @@ async function deleteInvoice(id) {
   id = Number(id);
   const invoice = await db.invoices.get(id);
   if (!invoice) throw new Error('الفاتورة غير موجودة');
-  await db.invoiceLines.where('invoice_id').equals(id).delete();
-  await db.payments.where('invoice_id').equals(id).delete();
-  await db.invoices.delete(id);
-  await refreshCaches();
-  return { success: true };
+
+  return db.transaction('rw', db.invoices, db.invoiceLines, db.items, db.payments, db.customers, db.suppliers, async () => {
+    const lines = await db.invoiceLines.where('invoice_id').equals(id).toArray();
+    for (const line of lines) {
+      if (line.item_id) {
+        const item = await db.items.get(Number(line.item_id));
+        if (item) {
+          const qtyBase = line.quantity_in_base || line.quantity;
+          const delta = invoice.type === 'sale' ? qtyBase : -qtyBase;
+          await db.items.update(item.id, { quantity: (item.quantity || 0) + delta });
+        }
+      }
+    }
+
+    const payments = await db.payments.where('invoice_id').equals(id).toArray();
+    for (const p of payments) {
+      if (p.customer_id) {
+        const cust = await db.customers.get(Number(p.customer_id));
+        if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) + p.amount });
+      }
+      if (p.supplier_id) {
+        const supp = await db.suppliers.get(Number(p.supplier_id));
+        if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) + p.amount });
+      }
+    }
+
+    if (invoice.type === 'sale' && invoice.customer_id) {
+      const cust = await db.customers.get(Number(invoice.customer_id));
+      if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) - invoice.total });
+    } else if (invoice.type === 'purchase' && invoice.supplier_id) {
+      const supp = await db.suppliers.get(Number(invoice.supplier_id));
+      if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) - invoice.total });
+    }
+
+    await db.invoiceLines.where('invoice_id').equals(id).delete();
+    await db.payments.where('invoice_id').equals(id).delete();
+    await db.invoices.delete(id);
+  }).then(async () => {
+    await refreshCaches();
+    return { success: true };
+  });
 }
 
 async function addPayment(body) {
@@ -465,52 +596,59 @@ async function handleVouchers(method, body, params) {
     const { type, date, amount, description, reference, customer_id, supplier_id, invoice_id } = body;
     if (!type || !['receipt', 'payment', 'expense'].includes(type)) throw new Error('نوع السند غير صحيح');
     if (!amount || parseFloat(amount) <= 0) throw new Error('المبلغ مطلوب');
-    const prefix = type === 'receipt' ? 'SC' : type === 'payment' ? 'SP' : 'SE';
-    const existingVouchers = vouchersCache.filter(v => v.type === type);
-    const nextNum = existingVouchers.length + 1;
-    const finalReference = reference || `${prefix}-${String(nextNum).padStart(4, '0')}`;
-    const id = await db.vouchers.add({
-      type,
-      date: date || new Date().toISOString().split('T')[0],
-      amount: parseFloat(amount),
-      description: description || null,
-      reference: finalReference,
-      customer_id: customer_id ? Number(customer_id) : null,
-      supplier_id: supplier_id ? Number(supplier_id) : null,
-      invoice_id: invoice_id ? Number(invoice_id) : null
+
+    return db.transaction('rw', db.vouchers, db.payments, db.customers, db.suppliers, db.expenses, async () => {
+      const prefix = type === 'receipt' ? 'SC' : type === 'payment' ? 'SP' : 'SE';
+      const existingVouchers = vouchersCache.filter(v => v.type === type);
+      const nextNum = existingVouchers.length + 1;
+      const finalReference = reference || `${prefix}-${String(nextNum).padStart(4, '0')}`;
+
+      const voucherId = await db.vouchers.add({
+        type,
+        date: date || new Date().toISOString().split('T')[0],
+        amount: parseFloat(amount),
+        description: description || null,
+        reference: finalReference,
+        customer_id: customer_id ? Number(customer_id) : null,
+        supplier_id: supplier_id ? Number(supplier_id) : null,
+        invoice_id: invoice_id ? Number(invoice_id) : null
+      });
+
+      const amt = parseFloat(amount);
+      if (type === 'receipt' && customer_id) {
+        const cust = await db.customers.get(Number(customer_id));
+        if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) - amt });
+        await db.payments.add({
+          invoice_id: invoice_id ? Number(invoice_id) : null,
+          customer_id: Number(customer_id),
+          amount: amt,
+          payment_date: date || new Date().toISOString().split('T')[0],
+          notes: description || 'سند قبض',
+          voucher_id: voucherId
+        });
+      } else if (type === 'payment' && supplier_id) {
+        const supp = await db.suppliers.get(Number(supplier_id));
+        if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) - amt });
+        await db.payments.add({
+          invoice_id: invoice_id ? Number(invoice_id) : null,
+          supplier_id: Number(supplier_id),
+          amount: amt,
+          payment_date: date || new Date().toISOString().split('T')[0],
+          notes: description || 'سند صرف',
+          voucher_id: voucherId
+        });
+      } else if (type === 'expense') {
+        await db.expenses.add({
+          amount: amt,
+          expense_date: date || new Date().toISOString().split('T')[0],
+          description: description || 'سند مصروف'
+        });
+      }
+      return voucherId;
+    }).then(async (voucherId) => {
+      await refreshCaches();
+      return { id: voucherId, type, amount: parseFloat(amount), reference: reference || `${prefix}-${String(vouchersCache.length + 1).padStart(4, '0')}` };
     });
-    const amt = parseFloat(amount);
-    if (type === 'receipt' && customer_id) {
-      const cust = await db.customers.get(Number(customer_id));
-      if (cust) await db.customers.update(cust.id, { balance: (cust.balance || 0) - amt });
-      await db.payments.add({
-        invoice_id: invoice_id ? Number(invoice_id) : null,
-        customer_id: Number(customer_id),
-        amount: amt,
-        payment_date: date || new Date().toISOString().split('T')[0],
-        notes: description || 'سند قبض',
-        voucher_id: id
-      });
-    } else if (type === 'payment' && supplier_id) {
-      const supp = await db.suppliers.get(Number(supplier_id));
-      if (supp) await db.suppliers.update(supp.id, { balance: (supp.balance || 0) - amt });
-      await db.payments.add({
-        invoice_id: invoice_id ? Number(invoice_id) : null,
-        supplier_id: Number(supplier_id),
-        amount: amt,
-        payment_date: date || new Date().toISOString().split('T')[0],
-        notes: description || 'سند صرف',
-        voucher_id: id
-      });
-    } else if (type === 'expense') {
-      await db.expenses.add({
-        amount: amt,
-        expense_date: date || new Date().toISOString().split('T')[0],
-        description: description || 'سند مصروف'
-      });
-    }
-    await refreshCaches();
-    return { id, type, amount: amt, reference: finalReference };
   }
   if (method === 'DELETE') {
     const id = Number(params.get('id'));

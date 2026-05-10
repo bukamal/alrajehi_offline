@@ -268,7 +268,7 @@ export async function deleteUnit(unitId) {
   } catch (e) { showToast(e.message, 'error'); }
 }
 
-// ==================== معالج النقر العام (إضافة/تعديل/حذف) ====================
+// معالج الأحداث العام
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('button');
   if (!t) return;

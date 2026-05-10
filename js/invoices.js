@@ -320,6 +320,16 @@ export async function showInvoiceModal(type, options = {}) {
       const supplier_id = !isSale && !isCash ? entityVal : null;
 
       const totalAmount = lines.reduce((s, l) => s + l.total, 0);
+      const paidAmount = parseFloat(paidInput.value) || 0;
+
+      // التحقق من الدفع النقدي الكامل
+      if (isCash && Math.abs(paidAmount - totalAmount) > 0.01) {
+        showToast('الفاتورة النقدية تتطلب دفع كامل المبلغ فوراً', 'error');
+        btn.disabled = false;
+        btn.innerHTML = `${ICONS.check} حفظ الفاتورة`;
+        return;
+      }
+
       const payload = {
         type,
         customer_id,
@@ -329,7 +339,7 @@ export async function showInvoiceModal(type, options = {}) {
         notes: container.querySelector('#inv-notes').value.trim(),
         lines,
         total: totalAmount,
-        paid_amount: parseFloat(paidInput.value) || 0
+        paid_amount: paidAmount
       };
 
       try {
