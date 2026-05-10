@@ -1,5 +1,6 @@
 // js/db.js — قاعدة بيانات IndexedDB مع Dexie.js + apiCall المحلي
-import Dexie from 'dexie';
+// نستخدم المتغير العام window.Dexie بدلاً من import
+const Dexie = window.Dexie;
 
 // ==================== إنشاء قاعدة البيانات ====================
 export const db = new Dexie('AlrajhiAccounting');
