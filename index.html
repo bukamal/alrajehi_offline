@@ -42,6 +42,16 @@
     </div>
   </div>
 
+  <!-- شاشة التفعيل (تظهر عند الحاجة) -->
+  <div id="activation-screen" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:100000; align-items:center; justify-content:center; flex-direction:column; gap:20px; padding:20px;">
+    <div class="loader-logo" style="width:80px;height:80px;background:linear-gradient(135deg, var(--primary), #8b5cf6);border-radius:24px;display:flex;align-items:center;justify-content:center;color:white;font-size:36px;font-weight:900;box-shadow:0 20px 40px -10px var(--primary-glow);">ر</div>
+    <h2 style="color:var(--text); font-size:24px; font-weight:900;">تفعيل النظام</h2>
+    <p style="color:var(--text-secondary); font-size:14px;">أدخل مفتاح الترخيص الذي تلقيته من المورد</p>
+    <input type="text" id="license-input" style="padding:14px 20px; border-radius:14px; border:2px solid var(--border); width:100%; max-width:420px; text-align:center; direction:ltr; font-size:16px; font-family: monospace;" placeholder="XXXXXXXX-...">
+    <button id="btn-activate" class="btn btn-primary" style="width:100%; max-width:420px; padding:14px;">تفعيل</button>
+    <p id="activation-msg" style="color:var(--danger); font-weight:700; min-height:24px;"></p>
+  </div>
+
   <!-- Error Screen -->
   <div id="error-screen" style="display:none; position:fixed; inset:0; background:#fff; z-index:99999; color:#dc2626; align-items:flex-start; justify-content:center; font-size:16px; padding:2rem; text-align:center; flex-direction:column; overflow-y:auto;">
     <h2 style="font-size:20px;margin-bottom:16px;">حدث خطأ</h2>
@@ -174,7 +184,7 @@
     }
   </script>
 
-  <!-- Main App Script -->
+  <!-- Main App Script (يشمل نظام التفعيل) -->
   <script type="module" src="js/init.js"></script>
 </body>
 </html>
