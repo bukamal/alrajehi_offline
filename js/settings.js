@@ -1,7 +1,6 @@
 // js/settings.js — إعدادات ونسخ احتياطي
 import { db, refreshCaches } from './db.js';
 import { showToast, confirmDialog } from './modal.js';
-import { emptyState } from './core.js';
 
 export async function loadSettings() {
   const html = `

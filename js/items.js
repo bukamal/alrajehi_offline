@@ -1,7 +1,7 @@
 // js/items.js — إدارة المواد (Offline)
 import { apiCall, formatNumber, formatDate, debounce, ICONS, getUnitOptionsForItem, renderSkeleton, animateEntry, emptyState } from './core.js';
 import { get as storeGet, set as storeSet } from './store.js';
-import { showToast, openModal, confirmDialog } from './modal.js';
+import { showToast, openModal, confirmDialog, showFormModal } from './modal.js';
 
 let filterLowStock = false;
 const LOW_STOCK_THRESHOLD = 5;
