@@ -274,11 +274,27 @@ export function showItemDetail(itemId) {
     `
   });
 
-  modal.element.querySelector('#edit-item-btn').onclick = () => {
+// --- بداية الكود الجديد لربط الأزرار ---
+const editBtn = modal.element.querySelector('#edit-item-btn');
+if (editBtn) {
+  editBtn.onclick = () => {
     modal.close();
-    setTimeout(() => showEditItemModal(itemId), 250);
+    setTimeout(() => {
+      try {
+        showEditItemModal(itemId);
+      } catch (e) {
+        console.error(e);
+        showToast('تعذر فتح نافذة التعديل', 'error');
+      }
+    }, 250);
   };
-  modal.element.querySelector('#delete-item-btn').onclick = () => {
+} else {
+  console.error('زر التعديل غير موجود في المودال');
+}
+
+const deleteBtn = modal.element.querySelector('#delete-item-btn');
+if (deleteBtn) {
+  deleteBtn.onclick = () => {
     modal.close();
     setTimeout(async () => {
       if (await confirmDialog(`هل أنت متأكد من حذف المادة <strong>${item.name}</strong>؟`)) {
@@ -290,16 +306,24 @@ export function showItemDetail(itemId) {
       }
     }, 250);
   };
-  modal.element.querySelector('#sell-item-btn').onclick = () => {
+}
+
+const sellBtn = modal.element.querySelector('#sell-item-btn');
+if (sellBtn) {
+  sellBtn.onclick = () => {
     modal.close();
     setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('sale', { itemId: itemId })), 250);
   };
-  modal.element.querySelector('#buy-item-btn').onclick = () => {
+}
+
+const buyBtn = modal.element.querySelector('#buy-item-btn');
+if (buyBtn) {
+  buyBtn.onclick = () => {
     modal.close();
     setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('purchase', { itemId: itemId })), 250);
   };
 }
-
+// --- نهاية الكود الجديد ---
 // ==================== نموذج إضافة مادة ====================
 async function showAddItemModal() {
   let categories = storeGet('categories');

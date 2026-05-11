@@ -10,7 +10,6 @@ export async function loadSettings() {
       <div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
         <button class="btn btn-primary" id="export-all">📤 تصدير جميع البيانات</button>
         <button class="btn btn-secondary" id="import-all">📥 استيراد من ملف JSON</button>
-        <input type="file" id="import-file-input" accept=".json" style="display:none;">
       </div>
       <div id="export-status" style="margin-top:20px;"></div>
     </div>`;
@@ -44,28 +43,35 @@ export async function loadSettings() {
     }
   };
 
+  // إنشاء input[type=file] ديناميكياً عند الحاجة
   document.getElementById('import-all').onclick = () => {
-    document.getElementById('import-file-input').click();
-  };
-
-  document.getElementById('import-file-input').onchange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    if (!await confirmDialog('سيتم استبدال جميع البيانات الحالية. هل أنت متأكد؟')) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      const tables = ['items', 'units', 'categories', 'customers', 'suppliers', 'invoices', 'invoiceLines', 'payments', 'expenses', 'vouchers'];
-      for (const table of tables) {
-        if (data[table] && Array.isArray(data[table])) {
-          await db.table(table).clear();
-          await db.table(table).bulkAdd(data[table]);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.style.position = 'fixed';
+    input.style.top = '-100px';
+    input.onchange = async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      if (!await confirmDialog('سيتم استبدال جميع البيانات الحالية. هل أنت متأكد؟')) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const tables = ['items', 'units', 'categories', 'customers', 'suppliers', 'invoices', 'invoiceLines', 'payments', 'expenses', 'vouchers'];
+        for (const table of tables) {
+          if (data[table] && Array.isArray(data[table])) {
+            await db.table(table).clear();
+            await db.table(table).bulkAdd(data[table]);
+          }
         }
+        await refreshCaches();
+        showToast('تم الاستيراد بنجاح', 'success');
+      } catch (err) {
+        showToast('فشل الاستيراد: ' + err.message, 'error');
       }
-      await refreshCaches();
-      showToast('تم الاستيراد بنجاح', 'success');
-    } catch (err) {
-      showToast('فشل الاستيراد: ' + err.message, 'error');
-    }
+      document.body.removeChild(input);
+    };
+    document.body.appendChild(input);
+    input.click();
   };
 }
