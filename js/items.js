@@ -1,4 +1,4 @@
-// js/items.js — إدارة المواد (Offline)
+// js/items.js — إدارة المواد (Offline) - نسخة كاملة مصححة
 import { apiCall, formatNumber, formatDate, debounce, ICONS, getUnitOptionsForItem, renderSkeleton, animateEntry, emptyState } from './core.js';
 import { get as storeGet, set as storeSet } from './store.js';
 import { showToast, openModal, confirmDialog, showFormModal } from './modal.js';
@@ -6,7 +6,6 @@ import { showToast, openModal, confirmDialog, showFormModal } from './modal.js';
 let filterLowStock = false;
 const LOW_STOCK_THRESHOLD = 5;
 
-// ==================== دوال مساعدة ====================
 function computeSubUnitQuantities(available, baseUnitName, itemUnits) {
   if (!itemUnits || itemUnits.length === 0 || available <= 0) return '';
   const sorted = [...itemUnits].sort((a,b) => (b.conversion_factor||1) - (a.conversion_factor||1));
@@ -26,7 +25,6 @@ function computeSubUnitQuantities(available, baseUnitName, itemUnits) {
   return parts.join('، ');
 }
 
-// ==================== عرض المواد ====================
 export function renderFilteredItems() {
   const container = document.getElementById('items-list');
   if (!container) return;
@@ -105,7 +103,6 @@ export function renderFilteredItems() {
   });
 }
 
-// ==================== تحميل قسم المواد ====================
 export async function loadItems() {
   const container = document.getElementById('tab-content');
   let categories = storeGet('categories');
@@ -160,7 +157,6 @@ export async function loadItems() {
   }
 }
 
-// ==================== تفاصيل المادة ====================
 export function showItemDetail(itemId) {
   const items = storeGet('items') || [];
   const item = items.find(i => i.id == itemId);
@@ -203,69 +199,40 @@ export function showItemDetail(itemId) {
   const purchasePrice = parseFloat(item.purchase_price) || 0;
   const sellingPrice = parseFloat(item.selling_price) || 0;
 
+  const bodyHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="stat-card" style="margin:0;padding:14px;"><div class="stat-label">الكمية المشتراة</div><div class="stat-value" style="font-size:16px;">${purchaseQty} ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px;"><div class="stat-label">الكمية المباعة</div><div class="stat-value" style="font-size:16px;">${saleQty} ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px;border-color:var(--primary);"><div class="stat-label">المتوفرة</div><div class="stat-value text-primary" style="font-size:22px;">${available} ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px;"><div class="stat-label">سعر الشراء (المتوسط)</div><div class="stat-value" style="font-size:16px;">${formatNumber(avgCost)} / ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px;"><div class="stat-label">سعر الشراء المسجل</div><div class="stat-value" style="font-size:16px;">${formatNumber(purchasePrice)} / ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px;"><div class="stat-label">سعر البيع</div><div class="stat-value" style="font-size:16px;">${formatNumber(sellingPrice)} / ${baseUnitName}</div></div>
+      <div class="stat-card" style="margin:0;padding:14px; background: var(--primary-light); border: 2px solid var(--primary);"><div class="stat-label" style="color: var(--primary-dark);">💰 قيمة المخزون (بالتكلفة)</div><div class="stat-value" style="font-size:20px; color: var(--primary);">${costDisplay}</div><div style="font-size:11px; color: var(--text-muted);">المتوسط المرجح لجميع المشتريات</div></div>
+      <div class="stat-card" style="margin:0;padding:14px; background: var(--success-light);"><div class="stat-label">💵 قيمة المخزون (بسعر البيع)</div><div class="stat-value" style="font-size:16px;">${sellDisplay}</div><div style="font-size:11px; color: var(--text-muted);">تقديرية لو تم بيع المخزون</div></div>
+    </div>
+
+    <div style="background:var(--bg);border-radius:16px;padding:18px;margin-bottom:20px;border:1.5px solid var(--border);">
+      <h4 style="margin-bottom:14px;display:flex;align-items:center;gap:10px; font-size:15px;"><span style="background:var(--primary);color:#fff;border-radius:8px;padding:4px 10px;font-size:12px;">📋</span>ملخص حركات المادة</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px; font-size:13px;">
+        <div><span style="color:var(--text-muted);">عدد مرات الشراء:</span> <strong>${item.purchase_count ?? 0}</strong></div>
+        <div><span style="color:var(--text-muted);">عدد مرات البيع:</span> <strong>${item.sale_count ?? 0}</strong></div>
+        <div><span style="color:var(--text-muted);">آخر شراء:</span> <strong>${item.last_purchase_date ? formatDate(item.last_purchase_date) : 'لا يوجد'}</strong></div>
+        <div><span style="color:var(--text-muted);">آخر بيع:</span> <strong>${item.last_sale_date ? formatDate(item.last_sale_date) : 'لا يوجد'}</strong></div>
+        <div><span style="color:var(--text-muted);">إجمالي الكمية المشتراة:</span> <strong>${purchaseQty} ${baseUnitName}</strong></div>
+        <div><span style="color:var(--text-muted);">إجمالي الكمية المباعة:</span> <strong>${saleQty} ${baseUnitName}</strong></div>
+        <div><span style="color:var(--text-muted);">متوسط سعر الشراء (المسجل):</span> <strong>${formatNumber(purchasePrice)}</strong></div>
+        <div><span style="color:var(--text-muted);">متوسط سعر البيع (المسجل):</span> <strong>${formatNumber(sellingPrice)}</strong></div>
+      </div>
+    </div>
+
+    ${unitsHtml}
+    <div class="form-label">التصنيف</div><p style="margin-bottom:14px; font-weight:600;">${item.category?.name || 'بدون تصنيف'}</p>
+    <div class="form-label">نوع المادة</div><p style="margin-bottom:14px; font-weight:600;">${item.item_type || 'مخزون'}</p>
+  `;
+
   const modal = openModal({
     title: item.name,
-    bodyHTML: `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
-        <div class="stat-card" style="margin:0;padding:14px;">
-          <div class="stat-label">الكمية المشتراة</div>
-          <div class="stat-value" style="font-size:16px;">${purchaseQty} ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px;">
-          <div class="stat-label">الكمية المباعة</div>
-          <div class="stat-value" style="font-size:16px;">${saleQty} ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px;border-color:var(--primary);">
-          <div class="stat-label">المتوفرة</div>
-          <div class="stat-value text-primary" style="font-size:22px;">${available} ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px;">
-          <div class="stat-label">سعر الشراء (المتوسط)</div>
-          <div class="stat-value" style="font-size:16px;">${formatNumber(avgCost)} / ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px;">
-          <div class="stat-label">سعر الشراء المسجل</div>
-          <div class="stat-value" style="font-size:16px;">${formatNumber(purchasePrice)} / ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px;">
-          <div class="stat-label">سعر البيع</div>
-          <div class="stat-value" style="font-size:16px;">${formatNumber(sellingPrice)} / ${baseUnitName}</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px; background: var(--primary-light); border: 2px solid var(--primary);">
-          <div class="stat-label" style="color: var(--primary-dark);">💰 قيمة المخزون (بالتكلفة)</div>
-          <div class="stat-value" style="font-size:20px; color: var(--primary);">${costDisplay}</div>
-          <div style="font-size:11px; color: var(--text-muted);">المتوسط المرجح لجميع المشتريات</div>
-        </div>
-        <div class="stat-card" style="margin:0;padding:14px; background: var(--success-light);">
-          <div class="stat-label">💵 قيمة المخزون (بسعر البيع)</div>
-          <div class="stat-value" style="font-size:16px;">${sellDisplay}</div>
-          <div style="font-size:11px; color: var(--text-muted);">تقديرية لو تم بيع المخزون</div>
-        </div>
-      </div>
-
-      <div style="background:var(--bg);border-radius:16px;padding:18px;margin-bottom:20px;border:1.5px solid var(--border);">
-        <h4 style="margin-bottom:14px;display:flex;align-items:center;gap:10px; font-size:15px;">
-          <span style="background:var(--primary);color:#fff;border-radius:8px;padding:4px 10px;font-size:12px;">📋</span>
-          ملخص حركات المادة
-        </h4>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px; font-size:13px;">
-          <div><span style="color:var(--text-muted);">عدد مرات الشراء:</span> <strong>${item.purchase_count ?? 0}</strong></div>
-          <div><span style="color:var(--text-muted);">عدد مرات البيع:</span> <strong>${item.sale_count ?? 0}</strong></div>
-          <div><span style="color:var(--text-muted);">آخر شراء:</span> <strong>${item.last_purchase_date ? formatDate(item.last_purchase_date) : 'لا يوجد'}</strong></div>
-          <div><span style="color:var(--text-muted);">آخر بيع:</span> <strong>${item.last_sale_date ? formatDate(item.last_sale_date) : 'لا يوجد'}</strong></div>
-          <div><span style="color:var(--text-muted);">إجمالي الكمية المشتراة:</span> <strong>${purchaseQty} ${baseUnitName}</strong></div>
-          <div><span style="color:var(--text-muted);">إجمالي الكمية المباعة:</span> <strong>${saleQty} ${baseUnitName}</strong></div>
-          <div><span style="color:var(--text-muted);">متوسط سعر الشراء (المسجل):</span> <strong>${formatNumber(purchasePrice)}</strong></div>
-          <div><span style="color:var(--text-muted);">متوسط سعر البيع (المسجل):</span> <strong>${formatNumber(sellingPrice)}</strong></div>
-        </div>
-      </div>
-
-      ${unitsHtml}
-      <div class="form-label">التصنيف</div>
-      <p style="margin-bottom:14px; font-weight:600;">${item.category?.name || 'بدون تصنيف'}</p>
-      <div class="form-label">نوع المادة</div>
-      <p style="margin-bottom:14px; font-weight:600;">${item.item_type || 'مخزون'}</p>
-    `,
+    bodyHTML: bodyHTML,
     footerHTML: `
       <button class="btn btn-secondary" id="edit-item-btn">${ICONS.edit} تعديل</button>
       <button class="btn btn-danger" id="delete-item-btn">${ICONS.trash} حذف</button>
@@ -274,56 +241,59 @@ export function showItemDetail(itemId) {
     `
   });
 
-// --- بداية الكود الجديد لربط الأزرار ---
-const editBtn = modal.element.querySelector('#edit-item-btn');
-if (editBtn) {
-  editBtn.onclick = () => {
-    modal.close();
-    setTimeout(() => {
-      try {
-        showEditItemModal(itemId);
-      } catch (e) {
-        console.error(e);
-        showToast('تعذر فتح نافذة التعديل', 'error');
-      }
-    }, 250);
-  };
-} else {
-  console.error('زر التعديل غير موجود في المودال');
-}
-
-const deleteBtn = modal.element.querySelector('#delete-item-btn');
-if (deleteBtn) {
-  deleteBtn.onclick = () => {
-    modal.close();
-    setTimeout(async () => {
-      if (await confirmDialog(`هل أنت متأكد من حذف المادة <strong>${item.name}</strong>؟`)) {
+  // ربط الأزرار بأمان مع التحقق من وجودها
+  const editBtn = modal.element.querySelector('#edit-item-btn');
+  if (editBtn) {
+    editBtn.onclick = () => {
+      modal.close();
+      setTimeout(() => {
         try {
-          await apiCall(`/items?id=${itemId}`, 'DELETE');
-          showToast('تم الحذف بنجاح', 'success');
-          loadItems();
-        } catch (e) { showToast(e.message, 'error'); }
-      }
-    }, 250);
-  };
+          showEditItemModal(itemId);
+        } catch (e) {
+          console.error(e);
+          showToast('تعذر فتح نافذة التعديل', 'error');
+        }
+      }, 250);
+    };
+  } else {
+    console.error('زر التعديل غير موجود في المودال');
+  }
+
+  const deleteBtn = modal.element.querySelector('#delete-item-btn');
+  if (deleteBtn) {
+    deleteBtn.onclick = () => {
+      modal.close();
+      setTimeout(async () => {
+        if (await confirmDialog(`هل أنت متأكد من حذف المادة <strong>${item.name}</strong>؟`)) {
+          try {
+            await apiCall(`/items?id=${itemId}`, 'DELETE');
+            showToast('تم الحذف بنجاح', 'success');
+            loadItems();
+          } catch (e) {
+            showToast(e.message, 'error');
+          }
+        }
+      }, 250);
+    };
+  }
+
+  const sellBtn = modal.element.querySelector('#sell-item-btn');
+  if (sellBtn) {
+    sellBtn.onclick = () => {
+      modal.close();
+      setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('sale', { itemId })), 250);
+    };
+  }
+
+  const buyBtn = modal.element.querySelector('#buy-item-btn');
+  if (buyBtn) {
+    buyBtn.onclick = () => {
+      modal.close();
+      setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('purchase', { itemId })), 250);
+    };
+  }
 }
 
-const sellBtn = modal.element.querySelector('#sell-item-btn');
-if (sellBtn) {
-  sellBtn.onclick = () => {
-    modal.close();
-    setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('sale', { itemId: itemId })), 250);
-  };
-}
-
-const buyBtn = modal.element.querySelector('#buy-item-btn');
-if (buyBtn) {
-  buyBtn.onclick = () => {
-    modal.close();
-    setTimeout(() => import('./invoices.js').then(m => m.showInvoiceModal('purchase', { itemId: itemId })), 250);
-  };
-}
-// --- نهاية الكود الجديد ---
 // ==================== نموذج إضافة مادة ====================
 async function showAddItemModal() {
   let categories = storeGet('categories');
