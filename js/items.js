@@ -503,11 +503,23 @@ async function showAddItemModal() {
 async function showEditItemModal(itemId) {
   const items = storeGet('items') || [];
   let categories = storeGet('categories');
+
+  // محاولة جلب التصنيفات، دون إيقاف فتح النافذة إذا فشلت
   if (!categories) {
-    try { categories = await apiCall('/definitions?type=category', 'GET'); } catch (e) { showToast('فشل تحميل التصنيفات', 'error'); return; }
+    try {
+      categories = await apiCall('/definitions?type=category', 'GET');
+    } catch (e) {
+      console.error('فشل تحميل التصنيفات:', e);
+      categories = [];
+      showToast('تعذر تحميل التصنيفات، يمكنك التعديل بدونها', 'warning');
+    }
   }
+
   const it = items.find(i => i.id === itemId);
-  if (!it) return;
+  if (!it) {
+    showToast('المادة غير موجودة', 'error');
+    return;
+  }
 
   const catOpts = categories.map(c => `<option value="${c.id}" ${c.id === it.category_id ? 'selected' : ''}>${c.name}</option>`).join('');
   const baseUnitName = it.base_unit?.name || it.base_unit?.abbreviation || 'قطعة';

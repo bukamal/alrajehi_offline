@@ -30,7 +30,31 @@ export async function loadSettings() {
         expenses: await db.expenses.toArray(),
         vouchers: await db.vouchers.toArray()
       };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+
+      // محاولة استخدام File System Access API لإظهار نافذة الحفظ
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: `alrajhi-backup-${new Date().toISOString().slice(0,10)}.json`,
+            types: [{
+              description: 'JSON Files',
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          showToast('تم تصدير البيانات بنجاح', 'success');
+          return;
+        } catch (fileError) {
+          // إذا ألغى المستخدم الحفظ أو فشل، نتابع بالطريقة القديمة
+          console.warn('File System API فشل أو أُلغي:', fileError);
+        }
+      }
+
+      // الطريقة الاحتياطية (الرابط التلقائي)
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
