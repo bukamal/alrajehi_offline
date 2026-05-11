@@ -1,4 +1,4 @@
-// js/init.js — تهيئة التطبيق مع فحص الترخيص السنوي
+// js/init.js — تهيئة التطبيق مع فحص ترخيص محسن
 import { checkActivation, activateLicense } from './activation.js';
 import { initNavigation } from './navigation.js';
 import { loadDashboard } from './dashboard.js';
@@ -6,22 +6,20 @@ import { refreshCaches } from './db.js';
 import { showToast } from './modal.js';
 
 async function initApp() {
-    const status = checkActivation();
+    const status = await checkActivation(); // تأكد من استدعاء await
 
     if (!status.valid) {
-        // إخفاء شاشة التحميل وإظهار واجهة التفعيل
         document.getElementById('loading-screen').style.display = 'none';
         const activationScreen = document.getElementById('activation-screen');
         if (activationScreen) {
             activationScreen.style.display = 'flex';
-            // إعداد رسالة حسب السبب
             const msgEl = document.getElementById('activation-msg');
             if (msgEl) {
                 switch (status.reason) {
-                    case 'expired': msgEl.textContent = 'انتهت صلاحية الترخيص. يرجى التواصل مع المورد للحصول على مفتاح جديد.'; break;
-                    case 'clock_tampered': msgEl.textContent = 'تم اكتشاف تلاعب في تاريخ الجهاز. تم إلغاء الترخيص.'; break;
-                    case 'device_mismatch': msgEl.textContent = 'هذا الترخيص غير صالح لهذا الجهاز.'; break;
-                    default: msgEl.textContent = 'الترخيص غير موجود أو تالف. يرجى إدخال مفتاح الترخيص.';
+                    case 'expired': msgEl.textContent = 'انتهت صلاحية الترخيص. تواصل مع المورد.'; break;
+                    case 'clock_tampered': msgEl.textContent = 'تم اكتشاف تلاعب في الساعة. تم إلغاء الترخيص.'; break;
+                    case 'device_mismatch': msgEl.textContent = 'الترخيص غير صالح لهذا الجهاز.'; break;
+                    default: msgEl.textContent = 'الترخيص غير موجود. أدخل المفتاح للتفعيل.';
                 }
             }
             document.getElementById('btn-activate').addEventListener('click', async () => {
@@ -29,11 +27,12 @@ async function initApp() {
                 const msg = document.getElementById('activation-msg');
                 try {
                     await activateLicense(key);
-                    msg.textContent = 'تم التفعيل بنجاح! جاري تحميل التطبيق...';
+                    msg.textContent = 'تم التفعيل! جاري التشغيل...';
                     msg.style.color = 'var(--success)';
-                    setTimeout(() => location.reload(), 1000);
+                    setTimeout(() => location.reload(), 500);
                 } catch (e) {
-                    msg.textContent = e.message;
+                    console.error(e);
+                    msg.textContent = e.message || 'فشل التفعيل';
                     msg.style.color = 'var(--danger)';
                 }
             });
@@ -41,7 +40,7 @@ async function initApp() {
         return;
     }
 
-    // التطبيق مفعل، تابع التهيئة بشكل طبيعي
+    // التطبيق مفعل
     if (document.getElementById('activation-screen')) {
         document.getElementById('activation-screen').style.display = 'none';
     }
@@ -55,7 +54,7 @@ async function initApp() {
         await loadDashboard();
     } catch (e) {
         console.error(e);
-        showToast('فشل تهيئة التطبيق', 'error');
+        showToast('فشل تحميل التطبيق', 'error');
         document.getElementById('loading-screen').classList.add('hidden');
     }
 }
